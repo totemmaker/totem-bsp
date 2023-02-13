@@ -1,0 +1,12 @@
+menu "Board Support Package"
+
+    menu "UART"
+        config BSP_UART_NUM
+            int "UART peripheral number"
+            default 2
+            range 0 2
+            help
+                Select UART peripheral number to use for communication with driver IC. By default it uses UART_NUM_2.
+    endmenu
+
+endmenu

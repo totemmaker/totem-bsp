@@ -1,0 +1,12 @@
+version: "0.1.0"
+description: Board Support Package for Totem RoboBoard X4
+url: https://github.com/totemmaker/totem-bsp/tree/master/roboboard_x4
+# documentation: https://docs.totemmaker.net/roboboard-x4/
+# issues: https://github.com/totemmaker/totem-bsp/issues
+# discussion: https://forum.totemmaker.net
+
+targets:
+  - esp32
+
+dependencies:
+  idf: ">=4.3"
