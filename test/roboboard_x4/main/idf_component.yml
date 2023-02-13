@@ -1,0 +1,10 @@
+## IDF Component Manager Manifest File
+description: RoboBoard X4 unit testing
+
+dependencies:
+  # Required ESP-IDF version
+  idf: ">=4.3"
+  # Include RoboBoard X4 dependency
+  roboboard_x4:
+    version: "*"
+    path: '../../../roboboard_x4'
