@@ -1,0 +1,7 @@
+## IDF Component Manager Manifest File
+version: "1.0.0"
+description: LED blink example with C functions
+dependencies:
+  roboboard_x4:
+    version: "*"
+    path: '../../../roboboard_x4'
