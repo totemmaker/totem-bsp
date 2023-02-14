@@ -1,8 +1,8 @@
 # Source files
 set(srcs "roboboard_x4.c" "roboboard_x4.cpp")
-# BSP drivers
-list(APPEND srcs "src/bsp_adc_idf${IDF_VERSION_MAJOR}.c")
-list(APPEND srcs "src/periph_driver.c")
+# BSP components
+list(APPEND srcs "components/bsp_adc_idf${IDF_VERSION_MAJOR}.c")
+list(APPEND srcs "components/periph_driver.c")
 # IDF components
 set(required_components "driver")
 
@@ -16,5 +16,4 @@ endif()
 
 idf_component_register(SRCS ${srcs}
                     INCLUDE_DIRS "include"
-                    PRIV_INCLUDE_DIRS "priv_include"
                     REQUIRES ${required_components})

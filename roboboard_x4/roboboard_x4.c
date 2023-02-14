@@ -18,8 +18,8 @@
 #endif
 
 #include "bsp/roboboard_x4.h"
-#include "bsp_adc.h"
-#include "periph_driver.h"
+#include "components/bsp_adc.h"
+#include "components/periph_driver.h"
 
 #define RegPort(cmd, port) (cmd + ((port+1)*0x10))
 #define GPIO_SEL(pin)   ((uint64_t)(((uint64_t)1)<<(pin)))
