@@ -9,6 +9,7 @@
 #include "freertos/task.h"
 
 #include "driver/gpio.h"
+#include "driver/i2c.h"
 
 #include "esp_timer.h"
 #if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(4, 4, 0)
@@ -83,6 +84,7 @@ static void IRAM_ATTR bsp_battery_charging_irq(void *arg) {
 }
 
 int bsp_board_init(void) {
+    esp_err_t err;
     // Install ISR service
     gpio_install_isr_service(ESP_INTR_FLAG_IRAM);
     // Initialize LED pin
@@ -106,22 +108,35 @@ int bsp_board_init(void) {
     pGPIOConfig.pin_bit_mask = GPIO_SEL(BSP_IO_BATTERY_CHARGE);
     gpio_config(&pGPIOConfig);
     gpio_isr_handler_add(BSP_IO_BATTERY_CHARGE, bsp_battery_charging_irq, NULL);
+    // Initialize I2C
+    i2c_config_t conf = {
+        .mode = I2C_MODE_MASTER,
+        .sda_io_num = BSP_IO_I2C_SDA,
+        .scl_io_num = BSP_IO_I2C_SCL,
+        .sda_pullup_en = GPIO_PULLUP_DISABLE,
+        .scl_pullup_en = GPIO_PULLUP_DISABLE,
+        .master.clk_speed = CONFIG_BSP_I2C_FREQUENCY,
+        .clk_flags = 0
+    };
+    err = i2c_param_config(CONFIG_BSP_I2C_NUM, &conf);
+    if (err) return err;
+    err = i2c_driver_install(CONFIG_BSP_I2C_NUM, conf.mode, 0, 0, 0);
+    if (err) return err;
     // Initialize battery analog read
     bsp_adc1_init(ADC_CHANNEL_0); // (BSP_IO_BATTERY_VOLTAGE) GPIO36 (SENSOR_VP) of ADC1
     // Establish connection to peripheral driver
-    esp_err_t err = periph_driver_init();
+    err = periph_driver_init();
+    if (err) return err;
     // Load default peripheral driver configuration
-    if (err == ESP_OK) { 
-        bsp_cmd_data[BSP_5V_STATE][0] = 1;
-        bsp_cmd_data[BSP_DC_CONFIG_FREQUENCY][0] = 50;
-        bsp_cmd_data[BSP_DC_CONFIG_FREQUENCY][2] = 50;
-        bsp_cmd_data[BSP_SERVO_CONFIG_PERIOD][0] = 20000;
-        for (int port=0; port<4; port++) {
-            bsp_cmd_data[BSP_DC_CONFIG_ENABLE][port] = 1;
-            bsp_cmd_data[BSP_RGB_CONFIG_ENABLE][port] = 1;
-            bsp_cmd_data[BSP_SERVO_CONFIG_ENABLE][port] = 1;
-            bsp_cmd_data[BSP_SERVO_CONFIG_RANGE][port] = (500 << 16 | 2500);
-        }
+    bsp_cmd_data[BSP_5V_STATE][0] = 1;
+    bsp_cmd_data[BSP_DC_CONFIG_FREQUENCY][0] = 50;
+    bsp_cmd_data[BSP_DC_CONFIG_FREQUENCY][2] = 50;
+    bsp_cmd_data[BSP_SERVO_CONFIG_PERIOD][0] = 20000;
+    for (int port=0; port<4; port++) {
+        bsp_cmd_data[BSP_DC_CONFIG_ENABLE][port] = 1;
+        bsp_cmd_data[BSP_RGB_CONFIG_ENABLE][port] = 1;
+        bsp_cmd_data[BSP_SERVO_CONFIG_ENABLE][port] = 1;
+        bsp_cmd_data[BSP_SERVO_CONFIG_RANGE][port] = (500 << 16 | 2500);
     }
     // Return initialization state
     return err;

@@ -9,4 +9,20 @@ menu "Board Support Package"
                 Select UART peripheral number to use for communication with driver IC. By default it uses UART_NUM_2.
     endmenu
 
+    menu "I2C"
+        config BSP_I2C_NUM
+            int "I2C peripheral number"
+            default 0
+            range 0 1
+            help
+                Select I2C peripheral number to use for IMU and Qwiic communication. By default it uses I2C_NUM_0.
+
+        config BSP_I2C_FREQUENCY
+            int "I2C peripheral frequency"
+            default 400000
+            range 0 400000
+            help
+                Set I2C peripheral frequency to use for IMU and Qwiic communication. By default is 400kHz.
+    endmenu
+
 endmenu
