@@ -60,11 +60,26 @@ void TotemTest_min(int32_t minimum, int32_t actual, const char *expression, uint
     printf("Error: Expected %" PRId32 " (0x%" PRIX32 ") to be minimum but %" PRId32 " (0x%" PRIX32 ") received.\n", minimum,(uint32_t)minimum, actual, (uint32_t)actual);
     FAIL();
 }
+void TotemTest_float(float expected, float drift, float actual, const char *expression, uint32_t line) {
+    if ((expected - drift) <= actual
+        && (expected + drift) >= actual) { PASS(); }
+    print_file(line);
+    print_expression(expression);
+    printf("Error: Expected %f ± %f but %f received.\n", expected, drift, actual);
+    FAIL();
+}
 void TotemTest_equal(int32_t expected, int32_t actual, const char *expression, uint32_t line) {
     if (expected == actual) { PASS(); }
     print_file(line);
     print_expression(expression);
     printf("Error: Expected %" PRId32 " (0x%" PRIX32 ") but %" PRId32 " (0x%" PRIX32 ") received.\n", expected, (uint32_t)expected, actual, (uint32_t)actual);
+    FAIL();
+}
+void TotemTest_equal_float(float expected, float actual, const char *expression, uint32_t line) {
+    if (expected == actual) { PASS(); }
+    print_file(line);
+    print_expression(expression);
+    printf("Error: Expected %f but %f received.\n", expected, actual);
     FAIL();
 }
 void TotemTest_not_equal(int32_t not_expected, int32_t actual, const char *expression, uint32_t line) {

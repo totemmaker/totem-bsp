@@ -32,7 +32,9 @@ static void TOTEM_TEST_FUNC(_test_case)()
 #define TEST_ERROR(expected, actual) TotemTest_error(expected, actual, "TEST_ERROR(" #expected ", " #actual ")", __LINE__)
 #define TEST_MAX(maximum, actual) TotemTest_max(maximum, actual, "TEST_MAX(" #maximum ", " #actual ")", __LINE__)
 #define TEST_MIN(expected, actual) TotemTest_min(expected, actual, "TEST_MIN(" #expected ", " #actual ")", __LINE__)
+#define TEST_FLOAT(expected, drift, actual) TotemTest_float(expected, drift, actual, "TEST_FLOAT(" #expected ", " #drift ", " #actual ")", __LINE__)
 #define TEST_EQUAL(expected, actual) TotemTest_equal(expected, actual, "TEST_EQUAL(" #expected ", " #actual ")", __LINE__)
+#define TEST_EQUALF(expected, actual) TotemTest_equal_float(expected, actual, "TEST_EQUALF(" #expected ", " #actual ")", __LINE__)
 #define TEST_NOT_EQUAL(not_expected, actual) TotemTest_not_equal(not_expected, actual, "TEST_NOT_EQUAL(" #not_expected ", " #actual ")", __LINE__)
 #define TEST_LIMIT(from, to, actual) TotemTest_range(from, to, actual, "TEST_LIMIT(" #from ", " #to ", " #actual ")", __LINE__)
 #define TEST_STRING(str1, ...) TotemTest_string("TEST_STRING(" #str1 ", " #__VA_ARGS__")", __LINE__, str1, __VA_ARGS__)
@@ -76,8 +78,10 @@ void TotemTest_assert(int32_t result,                          const char *expre
 void TotemTest_error(esp_err_t expected, esp_err_t actual,     const char *expression, uint32_t line);
 void TotemTest_max(int32_t maximum, int32_t actual,            const char *expression, uint32_t line);
 void TotemTest_min(int32_t minimum, int32_t actual,            const char *expression, uint32_t line);
+void TotemTest_float(float expected, float drift, float actual,const char *expression, uint32_t line);
 void TotemTest_equal(int32_t expected, int32_t actual,         const char *expression, uint32_t line);
-void TotemTest_not_equal(int32_t not_expected, int32_t actual,      const char *expression, uint32_t line);
+void TotemTest_equal_float(float expected, float actual,       const char *expression, uint32_t line);
+void TotemTest_not_equal(int32_t not_expected, int32_t actual, const char *expression, uint32_t line);
 void TotemTest_range(int32_t from, int32_t to, int32_t actual, const char *expression, uint32_t line);
 void TotemTest_string(const char *expression, uint32_t line, const char *str1, const char *str2, ...);
 void TotemTest_array(int32_t *array, uint32_t size, int32_t actual, const char *expression, uint32_t line);
