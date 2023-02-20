@@ -356,6 +356,19 @@ public:
     RGBX& operator[](uint8_t num);
 };
 /*******************************
+          X4.qwiic
+*******************************/
+class Qwiic {
+public:
+    // Check if module with specified I2C address is connected
+    bool isConnected(int address);
+    // Scan for connected I2C modules
+    // Returns number of devices found
+    int scan(void (*foundEvt)(int addr));
+    // Set I2C speed [100:400]kHz
+    bool setSpeed(uint32_t frequency);
+};
+/*******************************
           X4.gpioX
 *******************************/
 class GPIOX { // v1.0 only
@@ -390,6 +403,7 @@ public:
     Feature::SERVOX servoA, servoB, servoC;
     Feature::RGBABCD rgb;
     Feature::RGBX rgbA, rgbB, rgbC, rgbD;
+    Feature::Qwiic qwiic;
     Feature::GPIOX gpioA, gpioB, gpioC, gpioD; // v1.0 only
     
     RoboBoardX4();

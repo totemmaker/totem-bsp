@@ -10,6 +10,7 @@
 #include "freertos/timers.h"
 #include "freertos/task.h"
 
+#include "driver/i2c.h"
 #include "driver/gpio.h"
 
 #include "esp_system.h"
@@ -683,6 +684,54 @@ void Feature::RGBX::fadeStart(uint32_t duration) {
     bsp_cmd_write(BSP_RGB_FADE_START, port, duration);
 }
 /*******************************
+          X4.qwiic
+*******************************/
+bool Feature::Qwiic::isConnected(int address) {
+    // Prepare variables
+    esp_err_t err = ESP_FAIL;
+    i2c_cmd_handle_t handle = nullptr;
+    uint8_t buffer[I2C_LINK_RECOMMENDED_SIZE(1)] = { 0 };
+    // Create new transmission handle
+    handle = i2c_cmd_link_create_static(buffer, sizeof(buffer));
+    assert(handle != nullptr);
+    // Prepare message
+    if (i2c_master_start(handle) != ESP_OK) goto isConnected_end;
+    if (i2c_master_write_byte(handle, address << 1 | I2C_MASTER_WRITE, true) != ESP_OK) goto isConnected_end;
+    if (i2c_master_stop(handle) != ESP_OK) goto isConnected_end;
+    // Transmit message
+    err = i2c_master_cmd_begin(CONFIG_BSP_I2C_NUM, handle, 50);
+    isConnected_end:
+    // Delete transmission handle
+    i2c_cmd_link_delete_static(handle);
+    return err == ESP_OK;
+}
+int Feature::Qwiic::scan(void (*foundEvt)(int addr)) {
+    uint8_t count = 0;
+    // Loop all available I2C addresses
+    for (uint8_t address = 1; address < 127; address++) {
+        // Check if specified address is connected
+        if (this->isConnected(address)) {
+            // Return discovered address
+            if (foundEvt) foundEvt(address);
+            count++;
+        }
+    }
+    // Return discovered modules count
+    return count;
+}
+bool Feature::Qwiic::setSpeed(uint32_t frequency) {
+    i2c_config_t conf = {
+        I2C_MODE_MASTER,
+        BSP_IO_I2C_SDA,
+        BSP_IO_I2C_SCL,
+        GPIO_PULLUP_DISABLE,
+        GPIO_PULLUP_DISABLE,
+        frequency,
+        0
+    };
+    return i2c_param_config(CONFIG_BSP_I2C_NUM, &conf) == ESP_OK;
+}
+/*******************************
           X4.gpioX
 *******************************/
 void Feature::GPIOX::digitalWrite(uint8_t val) {
@@ -724,6 +773,7 @@ rgbA(0),
 rgbB(1),
 rgbC(2),
 rgbD(3),
+qwiic(),
 gpioA(0),
 gpioB(1),
 gpioC(2),

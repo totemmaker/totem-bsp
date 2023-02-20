@@ -41,6 +41,18 @@ TEST_CASE("Board init [board][C++]", "[board][C++]") {
 #include "test_servo.cpp"
 #include "test_rgb.cpp"
 
+TEST_CASE("Test Qwiic I2C scan", "[qwiic][C++]") {
+    static int foundAddr = 0;
+    int foundCnt = X4.qwiic.scan([](int addr) {
+        foundAddr = addr;
+    });
+    // Always has to find IMU sensor
+    TEST_EQUAL(1, foundCnt);
+    TEST_EQUAL(X4.imu.getI2CAddr(), foundAddr);
+    TEST_EQUAL(true, X4.qwiic.isConnected(X4.imu.getI2CAddr()));
+    TEST_EQUAL(false, X4.qwiic.isConnected(0x5)); // Random address. Not connected
+}
+
 TEST_CASE("Test bsp_cmd_read does not trigger callback", "[bsp][C]") {
     lastCall.called = 0;
     // No callback should be called during read
