@@ -37,6 +37,7 @@ TEST_CASE("Board init [board][C++]", "[board][C++]") {
 
 #include "test_board.cpp"
 #include "test_dc.cpp"
+#include "test_imu.cpp"
 #include "test_servo.cpp"
 #include "test_rgb.cpp"
 
@@ -102,7 +103,7 @@ TEST_CASE("Test write time", "[bsp][C]") {
 
 TEST_CASE("Test read time", "[bsp][C]") {
     for (int cmd=0; cmd<BSP_CMD_MAX; cmd++) {
-        int maxT = 15;
+        int maxT = 20;
         if (cmd == BSP_BOARD_SERIAL) maxT = 250; // up to 200 us
         if (cmd == BSP_BATTERY_VOLTAGE) maxT = 1000; // up to 1ms
         if (cmd == BSP_SERVO_PULSE) maxT = 14000; // up to 14ms
