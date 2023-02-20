@@ -9,4 +9,4 @@ targets:
   - esp32
 
 dependencies:
-  idf: ">=4.3"
+  idf: ">=4.4"

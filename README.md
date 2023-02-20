@@ -11,7 +11,6 @@ Allows to develop a standalone project or integrate into existing applications.
 
 ### Supported IDF versions
 
-* v4.3
 * v4.4
 * v5.0
 
@@ -30,7 +29,7 @@ Include `roboboard_x4` into `dependencies`
 dependencies:
   ## Required IDF version
   idf:
-    version: ">=4.1.0"
+    version: ">=4.4.0"
   # # Put list of dependencies here
   # # For components maintained by Espressif:
   # component: "~1.0.0"

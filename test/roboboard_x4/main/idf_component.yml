@@ -3,7 +3,7 @@ description: RoboBoard X4 unit testing
 
 dependencies:
   # Required ESP-IDF version
-  idf: ">=4.3"
+  idf: ">=4.4"
   # Include RoboBoard X4 dependency
   roboboard_x4:
     version: "*"

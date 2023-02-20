@@ -12,11 +12,7 @@
 #include "driver/i2c.h"
 
 #include "esp_timer.h"
-#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(4, 4, 0)
 #include "esp_mac.h"
-#else
-#include "esp_system.h" // IDF-4.3 esp_mac.h
-#endif
 
 #include "bsp/roboboard_x4.h"
 #include "components/bsp_adc.h"
