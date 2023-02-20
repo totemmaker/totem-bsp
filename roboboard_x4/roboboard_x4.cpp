@@ -6,6 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 #include <cmath>
+#include <cstring>
 #include "freertos/FreeRTOS.h"
 #include "freertos/timers.h"
 #include "freertos/task.h"
@@ -13,6 +14,8 @@
 #include "driver/i2c.h"
 #include "driver/gpio.h"
 
+#include "nvs.h"
+#include "nvs_flash.h"
 #include "esp_system.h"
 #include "esp_timer.h"
 #include "esp_event.h"
@@ -34,6 +37,91 @@ static uint32_t IRAM_ATTR getUptime() {
 // Create instance
 RoboBoardX4 X4;
 
+/*******************************
+          X4.config
+*******************************/
+#define INFO_NAME_ID                "k0" // name
+#define INFO_COLOR_ID               "k1" // color
+#define INFO_MODEL_ID               "k2" // model
+#define INFO_MOTOR_INVERT_ID        "k3" // motor_invert
+#define INFO_MOTOR_AUTOBRAKE_ID     "k4" // motor_brake
+static char configNameBuffer[31];
+static nvs_handle config_nvs_handle;
+static constexpr uint32_t fnv1a16Hash(uint32_t hash, const char *cmd) {
+    return (*cmd) ? fnv1a16Hash(((hash ^ *cmd ) * 16777619), cmd+1) : ((hash>>16) ^ (hash & ((uint32_t)0xFFFF)));
+}
+
+void Feature::Config::setRobotName(const char *name) {
+    strncpy(configNameBuffer, name, sizeof(configNameBuffer)-1);
+    nvs_set_str(config_nvs_handle, INFO_NAME_ID, configNameBuffer);
+    nvs_commit(config_nvs_handle);
+}
+char* Feature::Config::getRobotName() {
+    size_t size = sizeof(configNameBuffer);
+    if (nvs_get_str(config_nvs_handle, INFO_NAME_ID, configNameBuffer, &size) != ESP_OK)
+        configNameBuffer[0] = '\0';
+    return configNameBuffer;
+}
+void Feature::Config::setRobotModel(const char *name) {
+    this->setRobotModel(fnv1a16Hash(2166136261, name));
+}
+void Feature::Config::setRobotModel(uint16_t hash) {
+    nvs_set_u32(config_nvs_handle, INFO_MODEL_ID, hash);
+    nvs_commit(config_nvs_handle);
+}
+uint16_t Feature::Config::getRobotModel() {
+    uint32_t value = 0;
+    nvs_get_u32(config_nvs_handle, INFO_MODEL_ID, &value);
+    return value;
+}
+void Feature::Config::setRobotColor(uint8_t r, uint8_t g, uint8_t b) {
+    this->setRobotColor(r << 16 | g << 8 | b);
+}
+void Feature::Config::setRobotColor(uint32_t hex) {
+    nvs_set_u32(config_nvs_handle, INFO_COLOR_ID, hex & 0xFFFFFF);
+    nvs_commit(config_nvs_handle);
+}
+uint32_t Feature::Config::getRobotColor() {
+    uint32_t value = 0;
+    nvs_get_u32(config_nvs_handle, INFO_COLOR_ID, &value);
+    return value;
+}
+void Feature::Config::setDCInvert(bool invertA, bool invertB, bool invertC, bool invertD) {
+    uint32_t value = (invertA?1:0) << 24 | (invertB?1:0) << 16 | (invertC?1:0) << 8 | (invertD?1:0);
+    bsp_cmd_write(BSP_DC_CONFIG_INVERT, 0, invertA);
+    bsp_cmd_write(BSP_DC_CONFIG_INVERT, 1, invertB);
+    bsp_cmd_write(BSP_DC_CONFIG_INVERT, 2, invertC);
+    bsp_cmd_write(BSP_DC_CONFIG_INVERT, 3, invertD);
+    nvs_set_u32(config_nvs_handle, INFO_MOTOR_INVERT_ID, value);
+    nvs_commit(config_nvs_handle);
+}
+uint32_t Feature::Config::getDCInvert() {
+    uint32_t value = 0;
+    nvs_get_u32(config_nvs_handle, INFO_MOTOR_INVERT_ID, &value);
+    return value;
+}
+void Feature::Config::setDCAutobrake(bool powerA, bool powerB, bool powerC, bool powerD) {
+    this->setDCAutobrake(powerA?100:0, powerB?100:0, powerC?100:0, powerD?100:0);
+}
+void Feature::Config::setDCAutobrake(int powerA, int powerB, int powerC, int powerD) {
+    uint32_t value = (powerA&0xFF) << 24 | (powerB&0xFF) << 16 | (powerC&0xFF) << 8 | (powerD&0xFF);
+    bsp_cmd_write(BSP_DC_CONFIG_BRAKE, 0, powerA);
+    bsp_cmd_write(BSP_DC_CONFIG_BRAKE, 1, powerB);
+    bsp_cmd_write(BSP_DC_CONFIG_BRAKE, 2, powerC);
+    bsp_cmd_write(BSP_DC_CONFIG_BRAKE, 3, powerD);
+    nvs_set_u32(config_nvs_handle, INFO_MOTOR_AUTOBRAKE_ID, value);
+    nvs_commit(config_nvs_handle);
+}
+uint32_t Feature::Config::getDCAutobrake() {
+    uint32_t value = 0;
+    nvs_get_u32(config_nvs_handle, INFO_MOTOR_AUTOBRAKE_ID, &value);
+    return value;
+}
+void Feature::Config::reset() {
+    if (nvs_erase_all(config_nvs_handle) == ESP_OK) {
+        nvs_commit(config_nvs_handle);
+    }
+}
 /*******************************
           X4.button
 *******************************/
@@ -754,6 +842,7 @@ void Feature::GPIOX::pullMode(uint8_t mode) {
           X4
 *******************************/
 RoboBoardX4::RoboBoardX4() : 
+config(),
 button(),
 led(),
 imu(),
@@ -812,6 +901,10 @@ int RoboBoardX4::begin() {
     };
     esp_event_loop_create(&loop_args, &bsp_event_loop);
     esp_event_handler_register_with(bsp_event_loop, BSP_EVENT, ESP_EVENT_ANY_ID, esp_event_handler, NULL);
+
+    if (nvs_flash_init() == ESP_OK) {
+        nvs_open("robot_info", NVS_READWRITE, &config_nvs_handle);
+    }
 
     return bsp_board_init();
 }

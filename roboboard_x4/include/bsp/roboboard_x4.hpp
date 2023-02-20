@@ -10,6 +10,62 @@
 
 namespace Feature {
 /*******************************
+          X4.config
+*******************************/
+class Config {
+public:
+    // Set Robot Name. Will be visible during App connection
+    // Params:
+    // `name`: name up to 30 characters
+    void setRobotName(const char *name);
+    // Get the Robot Name configured with setRobotName()
+    // Returns: robot name string
+    char* getRobotName();
+    // Set the Robot Model name (description)
+    // Returns: `name`: string of any length. Will be converted to 16-bit hash value
+    void setRobotModel(const char *name);
+    // Set the Robot Model name (description)
+    // Params:
+    // `hash`: 16-bit value of model description hash [0x0000:0xFFFF]
+    void setRobotModel(uint16_t hash);
+    // Get the Robot Model name (description)
+    // Returns: 16-bit hash of model description name [0x0000:0xFFFF]
+    uint16_t getRobotModel();
+    // Set the Robot Color. Appearance color to easier identify robot. Will set provided color
+    // Params:
+    // `r`: Red [0:255]
+    // `g`: Green [0:255]
+    // `b`: Blue [0:255]
+    void setRobotColor(uint8_t r, uint8_t g, uint8_t b);
+    // Set the Robot Color. Appearance color to easier identify robot. Will set provided color
+    // Params:
+    // `hex`: 24-bit HEX color code [0x000000:0xFFFFFF]
+    void setRobotColor(uint32_t hex);
+    // Get the Robot Color 24-bit HEX color code
+    // Returns: 24-bit HEX color code [0x000000:0xFFFFFF]
+    uint32_t getRobotColor();
+    // Invert DC port output polarity
+    // Params:
+    // `invertX`: invert port [true:false]
+    void setDCInvert(bool invertA, bool invertB, bool invertC, bool invertD);
+    // Get DC ports invert parameter
+    // Returns: encoded 32-bit value A | B | C | D
+    uint32_t getDCInvert();
+    // Set DC automatic braking. Will brake motor when power is set to 0
+    // Params:
+    // `powerX` is port braking enabled [true:false]
+    void setDCAutobrake(bool powerA, bool powerB, bool powerC, bool powerD);
+    // Set DC automatic braking. Will brake motor when power is set to 0
+    // Params:
+    // `powerX`: amount of port braking power [0:100]%
+    void setDCAutobrake(int powerA, int powerB, int powerC, int powerD);
+    // Get DC ports automatic brake parameter
+    // Returns: encoded 32-bit value A | B | C | D
+    uint32_t getDCAutobrake();
+    // Reset configuration to default
+    void reset();
+};
+/*******************************
           X4.button
 *******************************/
 class Button {
@@ -393,6 +449,7 @@ public:
 
 class RoboBoardX4 {
 public:
+    Feature::Config config;
     Feature::Button button;
     Feature::Led led;
     Feature::IMU imu;

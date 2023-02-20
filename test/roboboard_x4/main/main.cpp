@@ -41,6 +41,31 @@ TEST_CASE("Board init [board][C++]", "[board][C++]") {
 #include "test_servo.cpp"
 #include "test_rgb.cpp"
 
+TEST_CASE("Test board configuration", "[config][C++]") {
+    // Reset config before start
+    X4.config.reset();
+    // Make sure config is empty
+    char *name = X4.config.getRobotName();
+    TEST_NOT_EQUAL(0, (int)name);
+    TEST_EQUAL(0, (int)name[0]);
+    TEST_EQUAL(0, X4.config.getRobotModel());
+    TEST_EQUAL(0, X4.config.getRobotColor());
+    TEST_EQUAL(0, X4.config.getDCInvert());
+    TEST_EQUAL(0, X4.config.getDCAutobrake());
+    // Write test values
+    X4.config.setRobotName("_123456789_123456789_123456789_abcd"); // Limit 30 chars
+    X4.config.setRobotModel("abcdefgh"); // fnv1a16Hash hash
+    X4.config.setRobotColor(0x13124578); // ignore alpha
+    X4.config.setDCInvert(true, false, true, false);
+    X4.config.setDCAutobrake(false, true, false, true);
+    // Test stored values
+    TEST_STRING("_123456789_123456789_123456789", X4.config.getRobotName());
+    TEST_EQUAL(0x0000dc57, X4.config.getRobotModel());
+    TEST_EQUAL(0x00124578, X4.config.getRobotColor());
+    TEST_EQUAL(0x01000100, X4.config.getDCInvert());
+    TEST_EQUAL(0x00640064, X4.config.getDCAutobrake());
+}
+
 TEST_CASE("Test Qwiic I2C scan", "[qwiic][C++]") {
     static int foundAddr = 0;
     int foundCnt = X4.qwiic.scan([](int addr) {
