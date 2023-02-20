@@ -85,6 +85,60 @@ public:
     void blinkFor(uint32_t durationMs, uint32_t blinkDuration = 100);
 };
 /*******************************
+          X4.imu (mems)
+*******************************/
+class IMU {
+public:
+    struct Data {
+        // Accelerometer. Measures acceleration
+        float getX_G(); // X G. Gravitational force
+        float getY_G(); // Y G. Gravitational force
+        float getZ_G(); // Z G. Gravitational force
+        float getX_mss(); // X m/s^2. Acceleration in meters per second squared
+        float getY_mss(); // Y m/s^2. Acceleration in meters per second squared
+        float getZ_mss(); // Z m/s^2. Acceleration in meters per second squared
+        // Gyroscope. Measures rotation speed
+        float getX_dps(); // X dps. Degrees per second
+        float getY_dps(); // Y dps. Degrees per second
+        float getZ_dps(); // Z dps. Degrees per second
+        float getX_rads(); // X rad/s. Radians per second
+        float getY_rads(); // Y rad/s. Radians per second
+        float getZ_rads(); // Z rad/s. Radians per second
+        float getX_rpm(); // X RPM. Rounds per minute
+        float getY_rpm(); // Y RPM. Rounds per minute
+        float getZ_rpm(); // Z RPM. Rounds per minute
+        // IMU internal temperature
+        float getTemp() { return this->getTempC(); }
+        float getTempC(); // Celsius
+        float getTempF(); // Fahrenheit
+        // Accelerometer based board orientation of X axis. [-180:180] degree
+        float getOrientX();
+        // Accelerometer based board orientation of Y axis. [-180:180] degree
+        float getOrientY();
+        // Accelerometer based roll estimation. [-180:180] degree
+        float getRoll();
+        // Accelerometer based pitch estimation. [-90:90] degree
+        float getPitch();
+    private:
+        float temp;
+        struct {
+            float x, y, z;
+        } accel, gyro;
+    };
+    // Read latest measurements
+    Data read();
+    // Set accelerometer maximum range of G force.
+    // Allowed values: 2, 4, 8, 16. Default: 16 (G)
+    void setAccelRange(uint16_t range);
+    // Set gyroscope maximum range of angle speed.
+    // Allowed values: 250, 500, 1000, 2000. Default 2000 (dps)
+    void setGyroRange(uint16_t range);
+    // Get name of IMU sensor
+    const char* getName();
+    // Get I2C address of IMU sensor
+    uint8_t getI2CAddr();
+};
+/*******************************
           X4.dcX
 *******************************/
 class DCX {
@@ -328,6 +382,7 @@ class RoboBoardX4 {
 public:
     Feature::Button button;
     Feature::Led led;
+    Feature::IMU imu;
     Feature::DCABCD dc;
     Feature::DCXX dcAB, dcCD;
     Feature::DCX dcA, dcB, dcC, dcD;

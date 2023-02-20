@@ -17,10 +17,10 @@
 #define BSP_IO_I2C_SCL           (GPIO_NUM_22)
 
 /* GPIO */
-#define BSP_IO_GPIOA             (GPIO_NUM_14)
-#define BSP_IO_GPIOB             (GPIO_NUM_23)
-#define BSP_IO_GPIOC             (GPIO_NUM_25)
-#define BSP_IO_GPIOD             (GPIO_NUM_26)
+#define BSP_IO_GPIOA             (GPIO_NUM_14) // v1.1 only
+#define BSP_IO_GPIOB             (GPIO_NUM_23) // v1.1 only
+#define BSP_IO_GPIOC             (GPIO_NUM_25) // v1.1 only
+#define BSP_IO_GPIOD             (GPIO_NUM_26) // v1.1 only
 
 /* Driver */
 #define BSP_IO_DRIVER_DFU        (GPIO_NUM_4)
@@ -35,5 +35,7 @@
 #define BSP_IO_USB_DETECT        (GPIO_NUM_39)
 #define BSP_IO_BATTERY_CHARGE    (GPIO_NUM_33)
 #define BSP_IO_BATTERY_VOLTAGE   (GPIO_NUM_36)
+#define BSP_IO_ACCEL_INT         (GPIO_NUM_35) // v1.1 only
+#define BSP_IO_ACCEL_INT_v10     (GPIO_NUM_14) // v1.0 only
 
 #endif /* INCLUDE_BSP_PIN_MAP */

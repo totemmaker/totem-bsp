@@ -5,6 +5,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
+#include <cmath>
 #include "freertos/FreeRTOS.h"
 #include "freertos/timers.h"
 #include "freertos/task.h"
@@ -239,6 +240,107 @@ void Feature::Led::blinkFor(uint32_t durationMs, uint32_t blinkDuration) {
     if (Led_st.toggleCount == 0) {
         Led_start_blinker((durationMs / blinkDuration) * 2, blinkDuration / 2);
     }
+}
+/*******************************
+          X4.imu
+*******************************/
+// Accelerometer. Measures acceleration
+float Feature::IMU::Data::getX_G() {
+    return this->accel.x;
+}
+float Feature::IMU::Data::getY_G() {
+    return this->accel.y;
+}
+float Feature::IMU::Data::getZ_G() {
+    return this->accel.z;
+}
+float Feature::IMU::Data::getX_mss() {
+    return this->accel.x * 9.80665;
+}
+float Feature::IMU::Data::getY_mss() {
+    return this->accel.y * 9.80665;
+}
+float Feature::IMU::Data::getZ_mss() {
+    return this->accel.z * 9.80665;
+}
+// Gyroscope. Measures rotation speed
+float Feature::IMU::Data::getX_dps() {
+    return this->gyro.x;
+}
+float Feature::IMU::Data::getY_dps() {
+    return this->gyro.y;
+}
+float Feature::IMU::Data::getZ_dps() {
+    return this->gyro.z;
+}
+float Feature::IMU::Data::getX_rads() {
+    return this->getX_dps() * 0.017453;
+}
+float Feature::IMU::Data::getY_rads() {
+    return this->getY_dps() * 0.017453;
+}
+float Feature::IMU::Data::getZ_rads() {
+    return this->getZ_dps() * 0.017453;
+}
+float Feature::IMU::Data::getX_rpm() {
+    return this->getX_dps() / 6;
+}
+float Feature::IMU::Data::getY_rpm() {
+    return this->getY_dps() / 6;
+}
+float Feature::IMU::Data::getZ_rpm() {
+    return this->getZ_dps() / 6;
+}
+
+float Feature::IMU::Data::getTempC() {
+    return this->temp;
+}
+float Feature::IMU::Data::getTempF() {
+    return (this->temp * 9 / 5) + 32;
+}
+
+float Feature::IMU::Data::getOrientX() {
+    return -atan2(this->accel.y , this->accel.z) * 180 / M_PI;
+}
+float Feature::IMU::Data::getOrientY() {
+    return this->getRoll();
+}
+
+float Feature::IMU::Data::getRoll() {
+    return -atan2(this->accel.x , this->accel.z) * 180 / M_PI;
+}
+float Feature::IMU::Data::getPitch() {
+    return -atan2(-this->accel.y, sqrt((this->accel.x * this->accel.x) + (this->accel.z * this->accel.z))) * 180 / M_PI;
+}
+
+Feature::IMU::Data Feature::IMU::read() {
+    Feature::IMU::Data data;
+    bsp_imu_read((BspIMU_data_t*)&data);
+    return data;
+}
+
+void Feature::IMU::setAccelRange(uint16_t range) {
+    bsp_imu_set_accel_range(range);
+}
+void Feature::IMU::setGyroRange(uint16_t range) {
+    bsp_imu_set_gyro_range(range);
+}
+
+const char* Feature::IMU::getName() {
+    int revision = X4.getRevisionNum();
+    switch (revision) {
+        case 10: return "LSM6DS3";
+        case 11: return "ICM-20689";
+    }
+    return "Unknown";
+}
+uint8_t Feature::IMU::getI2CAddr() {
+    int revision = X4.getRevisionNum();
+    switch (revision) {
+        case 10: return 0x6A;
+        case 11: return 0x68;
+    }
+    return 0;
 }
 /*******************************
           X4.dcABCD
@@ -605,6 +707,7 @@ void Feature::GPIOX::pullMode(uint8_t mode) {
 RoboBoardX4::RoboBoardX4() : 
 button(),
 led(),
+imu(),
 dc(),
 dcAB(0),
 dcCD(2),

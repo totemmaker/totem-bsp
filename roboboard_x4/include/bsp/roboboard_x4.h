@@ -119,6 +119,25 @@ int32_t bsp_cmd_read(bsp_cmd_t cmd, uint8_t port);
 */
 void bsp_callback_register(bsp_cmd_change_func_t callback);
 
+/**************************************************************************************************
+ * IMU
+ **************************************************************************************************/
+
+typedef struct {
+    float temp; // Unit: C
+    struct { // Unit: G, dps
+        float x, y, z;
+    } accel, gyro;
+} BspIMU_data_t;
+
+// Set accelerometer maximum range of G force.
+// Allowed values: 2, 4, 8, 16. Default: 16 (G)
+esp_err_t bsp_imu_set_accel_range(uint16_t range);
+// Set gyroscope maximum range of angle speed.
+// Allowed values: 250, 500, 1000, 2000. Default 2000 (dps)
+esp_err_t bsp_imu_set_gyro_range(uint16_t range);
+
+esp_err_t bsp_imu_read(BspIMU_data_t *data);
 
 /*******************************
  * GPIO pin control functions. RoboBoard X4 v1.0 only!

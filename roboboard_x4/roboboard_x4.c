@@ -20,6 +20,8 @@
 
 #include "bsp/roboboard_x4.h"
 #include "components/bsp_adc.h"
+#include "components/icm20689.h"
+#include "components/lsm6ds3.h"
 #include "components/periph_driver.h"
 
 #define RegPort(cmd, port) (cmd + ((port+1)*0x10))
@@ -122,6 +124,8 @@ int bsp_board_init(void) {
     if (err) return err;
     err = i2c_driver_install(CONFIG_BSP_I2C_NUM, conf.mode, 0, 0, 0);
     if (err) return err;
+    // Reset icm20689 IC
+    icm20689_reset();
     // Initialize battery analog read
     bsp_adc1_init(ADC_CHANNEL_0); // (BSP_IO_BATTERY_VOLTAGE) GPIO36 (SENSOR_VP) of ADC1
     // Establish connection to peripheral driver
@@ -138,6 +142,10 @@ int bsp_board_init(void) {
         bsp_cmd_data[BSP_SERVO_CONFIG_ENABLE][port] = 1;
         bsp_cmd_data[BSP_SERVO_CONFIG_RANGE][port] = (500 << 16 | 2500);
     }
+    // Initialize IMU
+    err = (bsp_boardRevision == 11) ? icm20689_init() : lsm6ds3_init();
+    bsp_imu_set_accel_range(16);
+    bsp_imu_set_gyro_range(2000);
     // Return initialization state
     return err;
 }
@@ -520,6 +528,49 @@ void bsp_callback_register(bsp_cmd_change_func_t callback) {
             break;
         }
     }
+}
+
+/**************************************************************************************************
+ * IMU
+ **************************************************************************************************/
+esp_err_t bsp_imu_set_accel_range(uint16_t range) {
+    if (bsp_boardRevision == 11) {
+        return icm20689_set_accel(range);
+    }
+    else {
+        return lsm6ds3_set_accel(range, LSM6DS3_ACCEL_RATE_104Hz, LSM6DS3_ACCEL_FILTER_100Hz);
+    }
+}
+esp_err_t bsp_imu_set_gyro_range(uint16_t range) {
+    if (bsp_boardRevision == 11) {
+        return icm20689_set_gyro(range);
+    }
+    else {
+        if (range == 250) range = 245;
+        return lsm6ds3_set_gyro(range, LSM6DS3_GYRO_RATE_104Hz);
+    }
+}
+esp_err_t bsp_imu_read(BspIMU_data_t *data) {
+    // Validate argument
+    if (data == NULL) return ESP_ERR_INVALID_ARG;
+    esp_err_t err;
+    if (bsp_boardRevision == 11) {
+        err = icm20689_read((icm20689_data_t*)data);
+        // Flip measurements relative to board perspective
+        data->accel.x = -data->accel.x;
+        data->accel.z = -data->accel.z;
+        data->gyro.x = -data->gyro.x;
+        data->gyro.z = -data->gyro.z;
+    }
+    else {
+        err = lsm6ds3_read((lsm6ds3_data_t*)data);
+        // Flip measurements relative to board perspective
+        data->accel.y = -data->accel.y;
+        data->accel.z = -data->accel.z;
+        data->gyro.y = -data->gyro.y;
+        data->gyro.z = -data->gyro.z;
+    }
+    return err;
 }
 
 uint32_t bsp_gpio_digital_read(uint8_t port) {

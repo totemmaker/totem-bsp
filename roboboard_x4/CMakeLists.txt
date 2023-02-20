@@ -2,6 +2,8 @@
 set(srcs "roboboard_x4.c" "roboboard_x4.cpp")
 # BSP components
 list(APPEND srcs "components/bsp_adc_idf${IDF_VERSION_MAJOR}.c")
+list(APPEND srcs "components/icm20689.c")
+list(APPEND srcs "components/lsm6ds3.c")
 list(APPEND srcs "components/periph_driver.c")
 # IDF components
 set(required_components "driver")
