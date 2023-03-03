@@ -19,7 +19,7 @@ TEST_CASE("Validate initial state", "[board][C]") {
     TEST_VALUES(10, 11, revision);
     TEST_LIMIT(100, 999, bsp_cmd_read(BSP_DRIVER_FIRMWARE, 0));
     TEST_EQUAL(0, bsp_cmd_read(BSP_BUTTON_STATE, 0));
-    TEST_EQUAL(0, bsp_cmd_read(BSP_LED_STATE, 0));
+    TEST_EQUAL(1, bsp_cmd_read(BSP_LED_STATE, 0));
     TEST_EQUAL(1, bsp_cmd_read(BSP_5V_STATE, 0));
     // In revision 1.1 DC check doesn't work (hardware issue). Should always 0
     if (revision == 11) TEST_EQUAL(0, bsp_cmd_read(BSP_DC_STATE, 0));

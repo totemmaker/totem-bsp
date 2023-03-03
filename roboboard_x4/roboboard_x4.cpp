@@ -40,12 +40,14 @@ RoboBoardX4 X4;
 /*******************************
           X4.config
 *******************************/
+#define DEFAULT_NAME                "RoboBoard X4"
+
 #define INFO_NAME_ID                "k0" // name
 #define INFO_COLOR_ID               "k1" // color
 #define INFO_MODEL_ID               "k2" // model
 #define INFO_MOTOR_INVERT_ID        "k3" // motor_invert
 #define INFO_MOTOR_AUTOBRAKE_ID     "k4" // motor_brake
-static char configNameBuffer[31];
+static char configNameBuffer[30];
 static nvs_handle config_nvs_handle;
 static constexpr uint32_t fnv1a16Hash(uint32_t hash, const char *cmd) {
     return (*cmd) ? fnv1a16Hash(((hash ^ *cmd ) * 16777619), cmd+1) : ((hash>>16) ^ (hash & ((uint32_t)0xFFFF)));
@@ -58,8 +60,9 @@ void Feature::Config::setRobotName(const char *name) {
 }
 char* Feature::Config::getRobotName() {
     size_t size = sizeof(configNameBuffer);
-    if (nvs_get_str(config_nvs_handle, INFO_NAME_ID, configNameBuffer, &size) != ESP_OK)
-        configNameBuffer[0] = '\0';
+    if (nvs_get_str(config_nvs_handle, INFO_NAME_ID, configNameBuffer, &size) != ESP_OK) {
+        strncpy(configNameBuffer, DEFAULT_NAME, sizeof(configNameBuffer)-1);
+    }
     return configNameBuffer;
 }
 void Feature::Config::setRobotModel(const char *name) {
@@ -890,8 +893,12 @@ static void bsp_cmd_change_callback(bsp_cmd_t cmd, uint8_t port, int32_t value, 
 }
 
 int RoboBoardX4::begin() {
+    // Validate if RoboBoard is initialized only once
+    static bool initialized = false;
+    if (initialized) return ESP_OK;
+    initialized = true;
+    // Register bsp change callback
     bsp_callback_register(bsp_cmd_change_callback);
-
     esp_event_loop_args_t loop_args = {
         .queue_size = 15,
         .task_name = "BSP_event",
@@ -901,12 +908,16 @@ int RoboBoardX4::begin() {
     };
     esp_event_loop_create(&loop_args, &bsp_event_loop);
     esp_event_handler_register_with(bsp_event_loop, BSP_EVENT, ESP_EVENT_ANY_ID, esp_event_handler, NULL);
-
+    // Initialize board drivers
+    esp_err_t err = bsp_board_init();
+    // Turn On LED
+    this->led.on();
+    // Initialize NVS storage for config
     if (nvs_flash_init() == ESP_OK) {
         nvs_open("robot_info", NVS_READWRITE, &config_nvs_handle);
     }
-
-    return bsp_board_init();
+    // Return init state
+    return err;
 }
 
 float RoboBoardX4::getBatteryVoltage() {
@@ -928,6 +939,7 @@ bool RoboBoardX4::isUSB() {
     return bsp_cmd_read(BSP_USB_STATE, 0);
 }
 void RoboBoardX4::restart() {
+    this->led.off();
     esp_restart();
 }
 int RoboBoardX4::getSerial() {
