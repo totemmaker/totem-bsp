@@ -902,9 +902,9 @@ int RoboBoardX4::begin() {
     esp_event_loop_args_t loop_args = {
         .queue_size = 15,
         .task_name = "BSP_event",
-        .task_priority = uxTaskPriorityGet(NULL),
+        .task_priority = 20,
         .task_stack_size = 10240,
-        .task_core_id = tskNO_AFFINITY
+        .task_core_id = 1,
     };
     esp_event_loop_create(&loop_args, &bsp_event_loop);
     esp_event_handler_register_with(bsp_event_loop, BSP_EVENT, ESP_EVENT_ANY_ID, esp_event_handler, NULL);

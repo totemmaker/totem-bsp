@@ -19,6 +19,7 @@
 #include "components/icm20689.h"
 #include "components/lsm6ds3.h"
 #include "components/periph_driver.h"
+#include "components/tbus.h"
 
 #define RegPort(cmd, port) (cmd + ((port+1)*0x10))
 #define GPIO_SEL(pin)   ((uint64_t)(((uint64_t)1)<<(pin)))
@@ -30,6 +31,7 @@ static const int32_t bsp_cmd_limit[BSP_CMD_MAX] = {
     [BSP_DRIVER_FIRMWARE]      = 0, // Driver firmware version [0:999]
     [BSP_BUTTON_STATE]         = 0, // Button state [0:1]
     [BSP_LED_STATE]            =-1, // LED state [0:any]
+    [BSP_TBUS_STATE]           = 1, // Disable / Enable TBUS [0:1]
     [BSP_5V_STATE]             =-1, // Disable / Enable 5V power rail [0:any]
     [BSP_DC_STATE]             = 0, // Is DC jack plugged? [0:1] (v1.0 only)
     [BSP_USB_STATE]            = 0, // Is USB cable plugged? [0:1]
@@ -142,6 +144,8 @@ int bsp_board_init(void) {
     err = (bsp_boardRevision == 11) ? icm20689_init() : lsm6ds3_init();
     bsp_imu_set_accel_range(16);
     bsp_imu_set_gyro_range(2000);
+    // Initialize TBUS component
+    err = tbus_init(BSP_IO_TWAI_EN, BSP_IO_TWAI_TX, BSP_IO_TWAI_RX);
     // Return initialization state
     return err;
 }
@@ -159,6 +163,7 @@ static int32_t bsp_board_cmd_read(bsp_cmd_t cmd) {
     case BSP_DRIVER_FIRMWARE: { return bsp_driverVersion; }
     case BSP_BUTTON_STATE: { return !gpio_get_level(BSP_IO_BUTTON); }
     case BSP_LED_STATE: { return gpio_get_level(BSP_IO_LED); }
+    case BSP_TBUS_STATE: { return tbus_is_enabled(); }
     case BSP_5V_STATE: { return bsp_cmd_data[BSP_5V_STATE][0]; }
     case BSP_DC_STATE: { 
         if (bsp_boardRevision == 11) return 0; // Not supported
@@ -193,6 +198,7 @@ static int32_t bsp_board_cmd_read(bsp_cmd_t cmd) {
 static int bsp_board_cmd_write(bsp_cmd_t cmd, int8_t port, uint32_t value) {
     switch (cmd) {
     case BSP_LED_STATE: { gpio_set_level(BSP_IO_LED, value); break; }
+    case BSP_TBUS_STATE: { tbus_enable(value); break; }
     case BSP_5V_STATE: { periph_driver_write(PERIPH_DRIVER_CTRL_POWER_5V, value); break; }
     default: return ESP_ERR_NOT_SUPPORTED;
     }
@@ -567,6 +573,19 @@ esp_err_t bsp_imu_read(BspIMU_data_t *data) {
         data->gyro.z = -data->gyro.z;
     }
     return err;
+}
+
+/**************************************************************************************************
+ * TBUS
+ **************************************************************************************************/
+void bsp_tbus_callback_register(bsp_tbus_receive_func_t receive_handler, void *ctx) {
+    // Register receive handler
+    tbus_callback_register(receive_handler, ctx);
+}
+
+int bsp_tbus_send(uint32_t id, uint8_t *data, uint8_t len) {
+    // Send CAN packet
+    return tbus_send(id, data, len);
 }
 
 uint32_t bsp_gpio_digital_read(uint8_t port) {

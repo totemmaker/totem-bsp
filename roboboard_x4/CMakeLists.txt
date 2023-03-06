@@ -5,6 +5,7 @@ list(APPEND srcs "components/bsp_adc_idf${IDF_VERSION_MAJOR}.c")
 list(APPEND srcs "components/icm20689.c")
 list(APPEND srcs "components/lsm6ds3.c")
 list(APPEND srcs "components/periph_driver.c")
+list(APPEND srcs "components/tbus.c")
 # IDF components
 set(required_components "driver")
 list(APPEND required_components "nvs_flash")
