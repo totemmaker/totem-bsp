@@ -113,6 +113,7 @@ public:
     // Register an event for button state change (press or release)
     // `buttonEvt`: button event function name
     void addEvent(void (*buttonEvt)());
+    void addEvent(void (*buttonEvt)(int state));
 };
 /*******************************
           X4.led

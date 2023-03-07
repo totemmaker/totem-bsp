@@ -143,6 +143,7 @@ enum {
 };
 static struct ButtonState {
     void (*evtFunc)();
+    void (*evtFunc2)(int state);
     uint32_t wasPressTime;
     uint32_t wasReleaseTime;
     uint32_t lastTimestamp;
@@ -186,6 +187,7 @@ static void Button_state_change(uint8_t state) {
     }
     // Call application event
     if (Button_st.evtFunc) Button_st.evtFunc();
+    if (Button_st.evtFunc2) Button_st.evtFunc2((Button_st.event & BtnEvtActive) != 0);
 }
 
 bool Feature::Button::isPressed() {
@@ -274,6 +276,9 @@ uint32_t Feature::Button::lastChange() {
 }
 void Feature::Button::addEvent(void (*buttonEvt)()) {
     Button_st.evtFunc = buttonEvt;
+}
+void Feature::Button::addEvent(void (*buttonEvt)(int state)) {
+    Button_st.evtFunc2 = buttonEvt;
 }
 /*******************************
           X4.led
@@ -947,7 +952,7 @@ int RoboBoardX4::begin() {
         .task_core_id = 1,
     };
     esp_event_loop_create(&loop_args, &bsp_event_loop);
-    esp_event_handler_register_with(bsp_event_loop, BSP_EVENT, ESP_EVENT_ANY_ID, esp_event_handler, NULL);
+    esp_event_handler_instance_register_with(bsp_event_loop, BSP_EVENT, ESP_EVENT_ANY_ID, esp_event_handler, NULL, NULL);
     // Initialize board drivers
     esp_err_t err = bsp_board_init();
     // Turn On LED

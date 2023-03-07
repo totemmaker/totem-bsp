@@ -1,4 +1,4 @@
-version: "0.9.0"
+version: "1.0.0"
 description: Board Support Package for Totem RoboBoard X4
 url: https://github.com/totemmaker/totem-bsp/tree/master/roboboard_x4
 # documentation: https://docs.totemmaker.net/roboboard-x4/

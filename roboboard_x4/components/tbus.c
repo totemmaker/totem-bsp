@@ -14,8 +14,8 @@
 
 #include "tbus.h"
 
-#define TASK_SIZE 10240
-#define TASK_CORE 1
+#define TASK_SIZE 2048
+#define TASK_CORE 0
 
 static TaskHandle_t xHandle;
 static StaticTask_t xTaskBuffer;
@@ -47,7 +47,7 @@ esp_err_t tbus_init(uint32_t pin_en, uint32_t pin_tx, uint32_t pin_rx) {
     esp_err_t err = twai_driver_install(&g_config, &t_config, &f_config);
     if (err != ESP_OK) return err;
     // Start receive task
-    xHandle = xTaskCreateStaticPinnedToCore(twai_receive_task_callback, "TWAI_receive", TASK_SIZE, NULL, 20, xStack, &xTaskBuffer, TASK_CORE);
+    xHandle = xTaskCreateStaticPinnedToCore(twai_receive_task_callback, "TWAI_receive", TASK_SIZE, NULL, 21, xStack, &xTaskBuffer, TASK_CORE);
     return xHandle != NULL ? ESP_OK : ESP_FAIL;
 }
 

@@ -151,3 +151,21 @@ TEST_CASE("Test LED function", "[board][C++]") {
     TEST_EQUAL(0, gpio_get_level(BSP_IO_LED));
     TEST_EQUAL(0, X4.led.isOn());
 }
+
+void buttonEvent() { }
+void buttonEventState(int state) { }
+void functionEventX(int num, int value) { }
+void functionEventA(int value) { }
+void functionEventB(int value) { }
+void functionEventC(int value) { }
+void functionEventD(int value) { }
+
+TEST_CASE("Register events", "[board][C++]") {
+    X4.button.addEvent(buttonEvent);
+    X4.button.addEvent(buttonEventState);
+    X4.function.addEvent(functionEventX);
+    X4.functionA.addEvent(functionEventA);
+    X4.function[1].addEvent(functionEventB);
+    X4.function[2].addEvent(functionEventC);
+    X4.function[3].addEvent(functionEventD);
+}
