@@ -823,6 +823,28 @@ bool Feature::Qwiic::setSpeed(uint32_t frequency) {
     return i2c_param_config(CONFIG_BSP_I2C_NUM, &conf) == ESP_OK;
 }
 /*******************************
+          X4.functionX
+*******************************/
+static void (*functionXEvtHandler[4])(int value);
+void Feature::FunctionX::addEvent(void (*functionEvt)(int value)) {
+    functionXEvtHandler[this->id] = functionEvt;
+}
+/*******************************
+          X4.function
+*******************************/
+static void (*functionEvtHandler)(int port, int value);
+void Feature::Function::addEvent(void (*functionEvt)(int port, int value)) {
+    functionEvtHandler = functionEvt;
+}
+Feature::FunctionX& Feature::Function::operator[](uint8_t num) {
+    switch (num) {
+        case 0: return X4.functionA;
+        case 1: return X4.functionB;
+        case 2: return X4.functionC;
+        default: return X4.functionD;
+    }
+}
+/*******************************
           X4.gpioX
 *******************************/
 void Feature::GPIOX::digitalWrite(uint8_t val) {
@@ -866,6 +888,11 @@ rgbB(1),
 rgbC(2),
 rgbD(3),
 qwiic(),
+function(),
+functionA(0),
+functionB(1),
+functionC(2),
+functionD(3),
 gpioA(0),
 gpioB(1),
 gpioC(2),
@@ -875,9 +902,22 @@ gpioD(3)
 ESP_EVENT_DEFINE_BASE(BSP_EVENT);
 esp_event_loop_handle_t bsp_event_loop;
 
+enum {
+    BSP_FUNCTIONA_VALUE = 0x10000,
+    BSP_FUNCTIONB_VALUE,
+    BSP_FUNCTIONC_VALUE,
+    BSP_FUNCTIOND_VALUE,
+};
+
 static void esp_event_handler(void *event_handler_arg, esp_event_base_t event_base, int32_t event_id, void *event_data) {
     uint32_t data = *((uint32_t*)event_data);
     if (event_id == BSP_BUTTON_STATE) Button_state_change(data);
+    else if (event_id & BSP_FUNCTIONA_VALUE) {
+        uint32_t port = event_id & ~BSP_FUNCTIONA_VALUE;
+        if (port > 3) return;
+        if (functionEvtHandler) functionEvtHandler(port, data);
+        if (functionXEvtHandler[port]) functionXEvtHandler[port](data);
+    }
 }
 
 static void bsp_cmd_change_callback(bsp_cmd_t cmd, uint8_t port, int32_t value, uint8_t isr) {

@@ -425,6 +425,26 @@ public:
     bool setSpeed(uint32_t frequency);
 };
 /*******************************
+          X4.functionX
+*******************************/
+class FunctionX {
+    const int32_t id;
+public:
+    FunctionX(uint32_t id) : id(id) { }
+    // Register function event
+    void addEvent(void (*functionEvt)(int value));
+};
+/*******************************
+          X4.function
+*******************************/
+class Function {
+public:
+    // Register function event
+    void addEvent(void (*functionEvt)(int port, int value));
+    // Access Function channel with numeric index. X4.function[0] references X4.functionA
+    FunctionX& operator[](uint8_t num);
+};
+/*******************************
           X4.gpioX
 *******************************/
 class GPIOX { // v1.0 only
@@ -461,6 +481,8 @@ public:
     Feature::RGBABCD rgb;
     Feature::RGBX rgbA, rgbB, rgbC, rgbD;
     Feature::Qwiic qwiic;
+    Feature::Function function;
+    Feature::FunctionX functionA, functionB, functionC, functionD;
     Feature::GPIOX gpioA, gpioB, gpioC, gpioD; // v1.0 only
     
     RoboBoardX4();
