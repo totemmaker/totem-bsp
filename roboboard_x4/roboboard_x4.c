@@ -10,6 +10,7 @@
 
 #include "driver/gpio.h"
 #include "driver/i2c.h"
+#include "hal/adc_types.h"
 
 #include "esp_timer.h"
 #include "esp_mac.h"
@@ -58,6 +59,10 @@ static const int32_t bsp_cmd_limit[BSP_CMD_MAX] = {
     [BSP_RGB_FADE_START]       = 0, // Start fade animation [0:(duration ms)]
     [BSP_RGB_CONFIG_ENABLE]    =-1, // Disabled / Enabled [0:any]
 };
+
+void bsp_adc1_init(adc_channel_t channel);
+uint32_t bsp_adc1_get_raw();
+uint32_t bsp_adc1_raw_to_voltage(uint32_t adc);
 
 static bsp_cmd_change_func_t bsp_cmd_callback[3];
 static volatile uint32_t bsp_battery_stateTime = 0;
