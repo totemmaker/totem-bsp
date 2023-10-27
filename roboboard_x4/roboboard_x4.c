@@ -16,11 +16,11 @@
 #include "esp_mac.h"
 
 #include "bsp/roboboard_x4.h"
-#include "components/bsp_adc.h"
-#include "components/icm20689.h"
-#include "components/lsm6ds3.h"
-#include "components/periph_driver.h"
-#include "components/tbus.h"
+#include "lib/bsp_adc.h"
+#include "lib/icm20689.h"
+#include "lib/lsm6ds3.h"
+#include "lib/periph_driver.h"
+#include "lib/tbus.h"
 
 #define RegPort(cmd, port) (cmd + ((port+1)*0x10))
 #define GPIO_SEL(pin)   ((uint64_t)(((uint64_t)1)<<(pin)))
