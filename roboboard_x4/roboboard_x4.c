@@ -9,18 +9,13 @@
 #include "freertos/task.h"
 
 #include "driver/gpio.h"
-#include "driver/i2c.h"
 #include "hal/adc_types.h"
 
 #include "esp_timer.h"
 #include "esp_mac.h"
 
 #include "bsp/roboboard_x4.h"
-#include "lib/bsp_adc.h"
-#include "lib/icm20689.h"
-#include "lib/lsm6ds3.h"
 #include "lib/periph_driver.h"
-#include "lib/tbus.h"
 
 #define RegPort(cmd, port) (cmd + ((port+1)*0x10))
 #define GPIO_SEL(pin)   ((uint64_t)(((uint64_t)1)<<(pin)))
@@ -32,7 +27,7 @@ static const int32_t bsp_cmd_limit[BSP_CMD_MAX] = {
     [BSP_DRIVER_FIRMWARE]      = 0, // Driver firmware version [0:999]
     [BSP_BUTTON_STATE]         = 0, // Button state [0:1]
     [BSP_LED_STATE]            =-1, // LED state [0:any]
-    [BSP_TBUS_STATE]           = 1, // Disable / Enable TBUS [0:1]
+    [BSP_CAN_STATE]            = 1, // Disable / Enable CAN bus transceiver [0:1]
     [BSP_5V_STATE]             =-1, // Disable / Enable 5V power rail [0:any]
     [BSP_DC_STATE]             = 0, // Is DC jack plugged? [0:1] (v1.0 only)
     [BSP_USB_STATE]            = 0, // Is USB cable plugged? [0:1]
@@ -113,22 +108,11 @@ int bsp_board_init(void) {
     pGPIOConfig.pin_bit_mask = GPIO_SEL(BSP_IO_BATTERY_CHARGE);
     gpio_config(&pGPIOConfig);
     gpio_isr_handler_add(BSP_IO_BATTERY_CHARGE, bsp_battery_charging_irq, NULL);
-    // Initialize I2C
-    i2c_config_t conf = {
-        .mode = I2C_MODE_MASTER,
-        .sda_io_num = BSP_IO_I2C_SDA,
-        .scl_io_num = BSP_IO_I2C_SCL,
-        .sda_pullup_en = GPIO_PULLUP_DISABLE,
-        .scl_pullup_en = GPIO_PULLUP_DISABLE,
-        .master.clk_speed = CONFIG_BSP_I2C_FREQUENCY,
-        .clk_flags = 0
-    };
-    err = i2c_param_config(CONFIG_BSP_I2C_NUM, &conf);
-    if (err) return err;
-    err = i2c_driver_install(CONFIG_BSP_I2C_NUM, conf.mode, 0, 0, 0);
-    if (err) return err;
-    // Reset icm20689 IC
-    icm20689_reset();
+    // Initialize CAN transceiver enable pin
+    gpio_set_level(BSP_IO_CAN_EN, 1); // Turn transceiver Off
+    pGPIOConfig.mode = GPIO_MODE_INPUT_OUTPUT;
+    pGPIOConfig.pin_bit_mask = ((uint64_t)1)<<BSP_IO_CAN_EN;
+    gpio_config(&pGPIOConfig);
     // Initialize battery analog read
     bsp_adc1_init(ADC_CHANNEL_0); // (BSP_IO_BATTERY_VOLTAGE) GPIO36 (SENSOR_VP) of ADC1
     // Establish connection to peripheral driver
@@ -145,14 +129,8 @@ int bsp_board_init(void) {
         bsp_cmd_data[BSP_SERVO_CONFIG_ENABLE][port] = 1;
         bsp_cmd_data[BSP_SERVO_CONFIG_RANGE][port] = (500 << 16 | 2500);
     }
-    // Initialize IMU
-    err = (bsp_boardRevision == 11) ? icm20689_init() : lsm6ds3_init();
-    bsp_imu_set_accel_range(16);
-    bsp_imu_set_gyro_range(2000);
-    // Initialize TBUS component
-    err = tbus_init(BSP_IO_TWAI_EN, BSP_IO_TWAI_TX, BSP_IO_TWAI_RX);
     // Return initialization state
-    return err;
+    return ESP_OK;
 }
 
 static int32_t bsp_board_cmd_read(bsp_cmd_t cmd) {
@@ -168,7 +146,7 @@ static int32_t bsp_board_cmd_read(bsp_cmd_t cmd) {
     case BSP_DRIVER_FIRMWARE: { return bsp_driverVersion; }
     case BSP_BUTTON_STATE: { return !gpio_get_level(BSP_IO_BUTTON); }
     case BSP_LED_STATE: { return gpio_get_level(BSP_IO_LED); }
-    case BSP_TBUS_STATE: { return tbus_is_enabled(); }
+    case BSP_CAN_STATE: { return !gpio_get_level(BSP_IO_CAN_EN); }
     case BSP_5V_STATE: { return bsp_cmd_data[BSP_5V_STATE][0]; }
     case BSP_DC_STATE: { 
         if (bsp_boardRevision == 11) return 0; // Not supported
@@ -203,7 +181,7 @@ static int32_t bsp_board_cmd_read(bsp_cmd_t cmd) {
 static int bsp_board_cmd_write(bsp_cmd_t cmd, int8_t port, uint32_t value) {
     switch (cmd) {
     case BSP_LED_STATE: { gpio_set_level(BSP_IO_LED, value); break; }
-    case BSP_TBUS_STATE: { tbus_enable(value); break; }
+    case BSP_CAN_STATE: { gpio_set_level(BSP_IO_CAN_EN, !value); break; }
     case BSP_5V_STATE: { periph_driver_write(PERIPH_DRIVER_CTRL_POWER_5V, value); break; }
     default: return ESP_ERR_NOT_SUPPORTED;
     }
@@ -535,62 +513,6 @@ void bsp_callback_register(bsp_cmd_change_func_t callback) {
             break;
         }
     }
-}
-
-/**************************************************************************************************
- * IMU
- **************************************************************************************************/
-esp_err_t bsp_imu_set_accel_range(uint16_t range) {
-    if (bsp_boardRevision == 11) {
-        return icm20689_set_accel(range);
-    }
-    else {
-        return lsm6ds3_set_accel(range, LSM6DS3_ACCEL_RATE_104Hz, LSM6DS3_ACCEL_FILTER_100Hz);
-    }
-}
-esp_err_t bsp_imu_set_gyro_range(uint16_t range) {
-    if (bsp_boardRevision == 11) {
-        return icm20689_set_gyro(range);
-    }
-    else {
-        if (range == 250) range = 245;
-        return lsm6ds3_set_gyro(range, LSM6DS3_GYRO_RATE_104Hz);
-    }
-}
-esp_err_t bsp_imu_read(BspIMU_data_t *data) {
-    // Validate argument
-    if (data == NULL) return ESP_ERR_INVALID_ARG;
-    esp_err_t err;
-    if (bsp_boardRevision == 11) {
-        err = icm20689_read((icm20689_data_t*)data);
-        // Flip measurements relative to board perspective
-        data->accel.x = -data->accel.x;
-        data->accel.z = -data->accel.z;
-        data->gyro.x = -data->gyro.x;
-        data->gyro.z = -data->gyro.z;
-    }
-    else {
-        err = lsm6ds3_read((lsm6ds3_data_t*)data);
-        // Flip measurements relative to board perspective
-        data->accel.y = -data->accel.y;
-        data->accel.z = -data->accel.z;
-        data->gyro.y = -data->gyro.y;
-        data->gyro.z = -data->gyro.z;
-    }
-    return err;
-}
-
-/**************************************************************************************************
- * TBUS
- **************************************************************************************************/
-void bsp_tbus_callback_register(bsp_tbus_receive_func_t receive_handler, void *ctx) {
-    // Register receive handler
-    tbus_callback_register(receive_handler, ctx);
-}
-
-int bsp_tbus_send(uint32_t id, uint8_t *data, uint8_t len) {
-    // Send CAN packet
-    return tbus_send(id, data, len);
 }
 
 uint32_t bsp_gpio_digital_read(uint8_t port) {

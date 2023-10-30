@@ -40,7 +40,7 @@ enum {
     BSP_DRIVER_FIRMWARE, // Driver firmware version [0:999]
     BSP_BUTTON_STATE, // Button state [0:1]
     BSP_LED_STATE, // LED state [0:any]
-    BSP_TBUS_STATE, // Disable / Enable TBUS [0:1]
+    BSP_CAN_STATE, // Disable / Enable CAN bus transceiver [0:1]
     BSP_5V_STATE, // Disable / Enable 5V power rail [0:any]
     BSP_DC_STATE, // Is DC jack plugged? [0:1] (v1.0 only)
     BSP_USB_STATE, // Is USB cable plugged? [0:1]
@@ -117,54 +117,6 @@ int32_t bsp_cmd_read(bsp_cmd_t cmd, uint8_t port);
  * `callback` - function to call on cmd value change
 */
 void bsp_callback_register(bsp_cmd_change_func_t callback);
-
-/**************************************************************************************************
- * IMU
- **************************************************************************************************/
-
-typedef struct {
-    float temp; // Unit: C
-    struct { // Unit: G, dps
-        float x, y, z;
-    } accel, gyro;
-} BspIMU_data_t;
-
-// Set accelerometer maximum range of G force.
-// Allowed values: 2, 4, 8, 16. Default: 16 (G)
-esp_err_t bsp_imu_set_accel_range(uint16_t range);
-// Set gyroscope maximum range of angle speed.
-// Allowed values: 250, 500, 1000, 2000. Default 2000 (dps)
-esp_err_t bsp_imu_set_gyro_range(uint16_t range);
-
-esp_err_t bsp_imu_read(BspIMU_data_t *data);
-
-/**************************************************************************************************
- * TBUS
- **************************************************************************************************/
-/**
- * TBUS (CAN) packets receive handler
- * `ctx`  - context
- * `id`   - identifier
- * `data` - buffer (8 bytes)
- * `len`  - length of data array
-*/
-typedef void (*bsp_tbus_receive_func_t)(void *ctx, uint32_t id, uint8_t *data, uint8_t len);
-/**
- * Register TBUS (CAN) packets receiver
- * `receive_handler` - function to receive CAN messages
- * `ctx`             - context passed to handler (NULL if not required)
-*/
-void bsp_tbus_callback_register(bsp_tbus_receive_func_t receive_handler, void *ctx);
-/**
- * Send (CAN) packet to TBUS network
- * `id`   - identifier
- * `data` - buffer (8 bytes)
- * `len`  - length of data array
-* Returns:
- *  `0`  - success
- * error - not enabled or TWAI error
-*/
-int bsp_tbus_send(uint32_t id, uint8_t *data, uint8_t len);
 
 /*******************************
  * GPIO pin control functions. RoboBoard X4 v1.0 only!

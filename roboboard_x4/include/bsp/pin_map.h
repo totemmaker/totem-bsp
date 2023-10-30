@@ -16,10 +16,10 @@
 #define BSP_IO_I2C_SDA           (GPIO_NUM_21)
 #define BSP_IO_I2C_SCL           (GPIO_NUM_22)
 
-/* TWAI */
-#define BSP_IO_TWAI_TX           (GPIO_NUM_17)
-#define BSP_IO_TWAI_RX           (GPIO_NUM_34)
-#define BSP_IO_TWAI_EN           (GPIO_NUM_5)  // v1.1 only
+/* CAN */
+#define BSP_IO_CAN_TX            (GPIO_NUM_17)
+#define BSP_IO_CAN_RX            (GPIO_NUM_34)
+#define BSP_IO_CAN_EN            (GPIO_NUM_5)  // v1.1 only
 
 /* GPIO */
 #define BSP_IO_GPIOA             (GPIO_NUM_14) // v1.1 only

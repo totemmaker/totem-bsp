@@ -1,10 +1,11 @@
 # Source files
 set(srcs "roboboard_x4.c")
+list(APPEND srcs "roboboard_x4_can.c")
+list(APPEND srcs "roboboard_x4_imu.c")
 # BSP libs
 list(APPEND srcs "lib/icm20689.c")
 list(APPEND srcs "lib/lsm6ds3.c")
 list(APPEND srcs "lib/periph_driver.c")
-list(APPEND srcs "lib/tbus.c")
 # IDF components
 set(components "driver")
 # IDF version is less than IDF5.0
