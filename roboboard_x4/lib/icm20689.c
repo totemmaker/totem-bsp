@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 #include "icm20689.h"
-#include "driver/i2c.h"
 
 enum { // Accelerometer full-scale
     ICM20689_ACC_SCALE_2g,
@@ -22,6 +21,17 @@ enum { // Gyroscope full-scale
     ICM20689_GYRO_SCALE_2000dps,
 };
 
+enum { // Gyroscope output data rate
+    ICM20689_GYRO_RATE_8000Hz,
+    ICM20689_GYRO_RATE_4000Hz,
+    ICM20689_GYRO_RATE_2000Hz,
+    ICM20689_GYRO_RATE_1000Hz,
+    ICM20689_GYRO_RATE_500Hz,
+    ICM20689_GYRO_RATE_250Hz,
+    ICM20689_GYRO_RATE_125Hz,
+    ICM20689_GYRO_RATE_62_5Hz,
+    ICM20689_GYRO_RATE_31_25Hz,
+};
 
 #define ICM20689_ADDR       0x68
 
@@ -31,30 +41,30 @@ enum { // Gyroscope full-scale
 #define REG_PWR_MGMT_1      0x6B
 #define REG_WHO_AM_I        0x75
 
+static const uint16_t accel_scale_list[] = { 2, 4, 8, 16 };
+static const uint16_t gyro_scale_list[] = { 250, 500, 1000, 2000 };
 static float accel_factor;
 static float gyro_factor;
 
-static esp_err_t write_reg(uint8_t reg, uint8_t value) {
-    uint8_t buffer[2] = { reg, value };
-    return i2c_master_write_to_device(CONFIG_BSP_I2C_NUM, ICM20689_ADDR, buffer, sizeof(buffer), 100);
+#define ARRAY_SIZE(array) (sizeof(array)/sizeof(array[0]))
+static int findIdx(uint32_t value, const uint16_t list[], uint32_t size) {
+    int i=0;
+    for (; i<size; i++) { if (value <= list[i]) break; }
+    int last = ((i-1) < 0) ? 0 : (i-1);
+    return (list[i]-value) < (value-list[last]) ? i : last;
 }
 
-static esp_err_t read_reg(uint8_t reg, uint8_t *data, uint32_t len) {
-    return i2c_master_write_read_device(CONFIG_BSP_I2C_NUM, ICM20689_ADDR, &reg, 1, data, len, 100);
-}
-
-esp_err_t icm20689_reset(void) {
+esp_err_t icm20689_reset(imu_i2c_t *i2c) {
     // Perform soft reset
-    return write_reg(REG_PWR_MGMT_1, 0x80);
+    return i2c->write_reg(ICM20689_ADDR, REG_PWR_MGMT_1, 0x80);
 }
 
-esp_err_t icm20689_init(void) {
+esp_err_t icm20689_init(imu_i2c_t *i2c) {
     esp_err_t err;
     uint8_t result = 0;
-
-    write_reg(REG_PWR_MGMT_1, 0x00); // Wake up & select internal oscillator
+    i2c->write_reg(ICM20689_ADDR, REG_PWR_MGMT_1, 0x00); // Wake up & select internal oscillator
     // Read identification register
-    err = read_reg(REG_WHO_AM_I, &result, 1);
+    err = i2c->read_reg(ICM20689_ADDR, REG_WHO_AM_I, &result, 1);
     // Check for communication error
     if (err) return err;
     // Validate identification
@@ -62,37 +72,25 @@ esp_err_t icm20689_init(void) {
     return err;
 }
 
-esp_err_t icm20689_set_accel(uint16_t range) {
-    uint8_t rBits;
-    switch (range) {
-        case 2: rBits = ICM20689_ACC_SCALE_2g; break;
-        case 4: rBits = ICM20689_ACC_SCALE_4g; break;
-        case 8: rBits = ICM20689_ACC_SCALE_8g; break;
-        case 16: rBits = ICM20689_ACC_SCALE_16g; break;
-        default: return ESP_ERR_INVALID_ARG;
-    }
-    accel_factor = (float)range / 32767;
-    return write_reg(REG_ACCEL_CONFIG, rBits << 3);
+esp_err_t icm20689_set_accel(imu_i2c_t *i2c, uint32_t *range) {
+    uint8_t scaleIdx = findIdx(*range, accel_scale_list, ARRAY_SIZE(accel_scale_list));
+    *range = accel_scale_list[scaleIdx];
+    accel_factor = (float)accel_scale_list[scaleIdx] / 32767;
+    return i2c->write_reg(ICM20689_ADDR, REG_ACCEL_CONFIG, scaleIdx << 3);
 }
-esp_err_t icm20689_set_gyro(uint16_t range) {
-    uint8_t rBits;
-    switch (range) {
-        case 250: rBits = ICM20689_GYRO_SCALE_250dps; break;
-        case 500: rBits = ICM20689_GYRO_SCALE_500dps; break;
-        case 1000: rBits = ICM20689_GYRO_SCALE_1000dps; break;
-        case 2000: rBits = ICM20689_GYRO_SCALE_2000dps; break;
-        default: return ESP_ERR_INVALID_ARG;
-    }
-    gyro_factor = (float)range / 32767;
-    return write_reg(REG_GYRO_CONFIG, rBits << 3);
+esp_err_t icm20689_set_gyro(imu_i2c_t *i2c, uint32_t *range) {
+    uint8_t scaleIdx = findIdx(*range, gyro_scale_list, ARRAY_SIZE(gyro_scale_list));
+    *range = gyro_scale_list[scaleIdx];
+    gyro_factor = (float)gyro_scale_list[scaleIdx] / 32767;
+    return i2c->write_reg(ICM20689_ADDR, REG_GYRO_CONFIG, scaleIdx << 3);
 }
 
 #define GET_REG_VALUE(buf, idx) ((((int16_t)buf[idx*2]) << 8) | buf[(idx*2)+1])
 
-esp_err_t icm20689_read(icm20689_data_t *data) {
+esp_err_t icm20689_read(imu_i2c_t *i2c, imu_data_t *data) {
     esp_err_t err;
     uint8_t buffer[7*2];
-    err = read_reg(REG_ACCEL_XOUT_H, (uint8_t*)&buffer, sizeof(buffer));
+    err = i2c->read_reg(ICM20689_ADDR, REG_ACCEL_XOUT_H, (uint8_t*)&buffer, sizeof(buffer));
     int16_t accX = GET_REG_VALUE(buffer, 0);
     int16_t accY = GET_REG_VALUE(buffer, 1);
     int16_t accZ = GET_REG_VALUE(buffer, 2);

@@ -16,7 +16,6 @@
 #include "bsp/roboboard_x4.h"
 
 #define TASK_SIZE 2048
-#define TASK_CORE 0
 
 static uint8_t twai_selftest = 0;
 static TaskHandle_t xHandle;
@@ -27,7 +26,6 @@ static void twai_receive_task_callback(void *context);
 
 static bsp_can_receive_handle_t can_callback;
 static void *can_callback_args;
-static uint8_t can_running;
 
 esp_err_t bsp_twai_init(int selftest) {
     // Configure TWAI parameters
@@ -44,7 +42,7 @@ esp_err_t bsp_can_init(bsp_can_receive_handle_t receive_handler, void *args) {
     can_callback = receive_handler;
     can_callback_args = args;
     // Start receive task
-    xHandle = xTaskCreateStaticPinnedToCore(twai_receive_task_callback, "TWAI_receive", TASK_SIZE, NULL, 21, xStack, &xTaskBuffer, TASK_CORE);
+    xHandle = xTaskCreateStatic(twai_receive_task_callback, "TWAI_receive", TASK_SIZE, NULL, 21, xStack, &xTaskBuffer);
     return xHandle != NULL ? ESP_OK : ESP_FAIL;
 }
 
@@ -60,12 +58,10 @@ esp_err_t bsp_can_enable(uint8_t state) {
         vTaskSuspend(xHandle); // Stop RX task
         bsp_cmd_write(BSP_CAN_STATE, 0, 0); // Off transceiver
     }
-    can_running = state;
     return err;
 }
 
 esp_err_t bsp_can_send(uint32_t id, uint8_t *data, uint8_t len) {
-    if (!can_running) return ESP_ERR_INVALID_STATE;
     if (len > 8) return ESP_ERR_INVALID_SIZE;
     // Prepare message
     twai_message_t message;
@@ -85,13 +81,10 @@ esp_err_t bsp_can_send(uint32_t id, uint8_t *data, uint8_t len) {
     return twai_transmit(&message, 50);
 }
 
-esp_err_t bsp_can_send_rtr(uint32_t id, uint8_t len) {
-    return bsp_can_send(BSP_CAN_FlagRTR | id, NULL, len);
-}
-
 static void twai_receive_task_callback(void *context) {
     twai_message_t message;
     for (;;) {
+        // Loop to receive CAN packets and forward to callback
         if (twai_receive(&message, portMAX_DELAY) == ESP_OK) {
             uint32_t id = message.identifier;
             id |= (message.flags & TWAI_MSG_FLAG_EXTD) ? BSP_CAN_FlagExt : 0;

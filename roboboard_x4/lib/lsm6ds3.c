@@ -7,8 +7,6 @@
  */
 #include "lsm6ds3.h"
 
-#include "driver/i2c.h"
-
 enum { // Accelerometer full-scale
     LSM6DS3_ACC_SCALE_2g,
     LSM6DS3_ACC_SCALE_16g,
@@ -17,11 +15,44 @@ enum { // Accelerometer full-scale
 };
 
 enum { // Gyroscope full-scale
-    LSM6DS3_GYRO_SCALE_245dps,
+    LSM6DS3_GYRO_SCALE_250dps,
     LSM6DS3_GYRO_SCALE_500dps,
     LSM6DS3_GYRO_SCALE_1000dps,
     LSM6DS3_GYRO_SCALE_2000dps,
 };
+
+typedef enum { // Accelerometer output data rate (sample rate)
+    LSM6DS3_ACCEL_RATE_PowerDown,
+    LSM6DS3_ACCEL_RATE_12_5Hz,
+    LSM6DS3_ACCEL_RATE_26Hz,
+    LSM6DS3_ACCEL_RATE_52Hz,
+    LSM6DS3_ACCEL_RATE_104Hz,
+    LSM6DS3_ACCEL_RATE_208Hz,
+    LSM6DS3_ACCEL_RATE_416Hz,
+    LSM6DS3_ACCEL_RATE_833Hz,
+    LSM6DS3_ACCEL_RATE_1666Hz,
+    LSM6DS3_ACCEL_RATE_3332Hz,
+    LSM6DS3_ACCEL_RATE_6664Hz,
+} lsm6ds3_accel_rate_t;
+
+typedef enum { // Gyroscope output data rate (sample rate)
+    LSM6DS3_GYRO_RATE_PowerDown,
+    LSM6DS3_GYRO_RATE_12_5Hz,
+    LSM6DS3_GYRO_RATE_26Hz,
+    LSM6DS3_GYRO_RATE_52Hz,
+    LSM6DS3_GYRO_RATE_104Hz,
+    LSM6DS3_GYRO_RATE_208Hz,
+    LSM6DS3_GYRO_RATE_416Hz,
+    LSM6DS3_GYRO_RATE_833Hz,
+    LSM6DS3_GYRO_RATE_1666Hz,
+} lsm6ds3_gyro_rate_t;
+
+typedef enum { // Accelerometer Anti-aliasing filter bandwidth 
+    LSM6DS3_ACCEL_FILTER_400Hz,
+    LSM6DS3_ACCEL_FILTER_200Hz,
+    LSM6DS3_ACCEL_FILTER_100Hz,
+    LSM6DS3_ACCEL_FILTER_50Hz,
+} lsm6ds3_accel_filter_t;
 
 #define LSM6DS3_ADDR    0x6A
 
@@ -30,58 +61,62 @@ enum { // Gyroscope full-scale
 #define REG_CTRL2_G     0x11
 #define REG_OUT_TEMP_L  0x20
 
+static const uint16_t accel_scale_list[] = { 2, 4, 8, 16 };
+static const uint16_t gyro_scale_list[] = { 125, 250, 500, 1000, 2000 };
+static const uint16_t data_rate_list[] = { 0, 12, 26, 52, 104, 208, 416, 833, 1666, 3332, 6664 };
+static const uint16_t filter_list[] = { 50, 100, 200, 400 };
 static float accel_factor;
 static float gyro_factor;
 
-static esp_err_t write_reg(uint8_t reg, uint8_t value) {
-    uint8_t buffer[2] = { reg, value };
-    return i2c_master_write_to_device(CONFIG_BSP_I2C_NUM, LSM6DS3_ADDR, buffer, sizeof(buffer), 100);
+#define ARRAY_SIZE(array) (sizeof(array)/sizeof(array[0]))
+static int findIdx(uint32_t value, const uint16_t list[], uint32_t size) {
+    int i=0;
+    for (; i<size; i++) { if (value <= list[i]) break; }
+    int last = ((i-1) < 0) ? 0 : (i-1);
+    return (list[i]-value) < (value-list[last]) ? i : last;
 }
 
-static esp_err_t read_reg(uint8_t reg, uint8_t *data, uint32_t len) {
-    return i2c_master_write_read_device(CONFIG_BSP_I2C_NUM, LSM6DS3_ADDR, &reg, 1, data, len, 100);
-}
-
-esp_err_t lsm6ds3_init(void) {
+esp_err_t lsm6ds3_init(imu_i2c_t *i2c) {
     esp_err_t err;
     uint8_t result = 0;
     // Read identification register
-    err = read_reg(REG_WHO_AM_I, &result, 1);
+    err = i2c->read_reg(LSM6DS3_ADDR, REG_WHO_AM_I, &result, 1);
     if (err) return err;
     // Validate identification
     if (result != 0x69) return ESP_ERR_NOT_SUPPORTED;
     return ESP_OK;
 }
-
-esp_err_t lsm6ds3_set_accel(uint16_t range, lsm6ds3_accel_rate_t rate, lsm6ds3_accel_filter_t filter) {
-    uint8_t rBits;
-    switch (range) {
-        case 2: rBits = LSM6DS3_ACC_SCALE_2g; break;
-        case 4: rBits = LSM6DS3_ACC_SCALE_4g; break;
-        case 8: rBits = LSM6DS3_ACC_SCALE_8g; break;
-        case 16: rBits = LSM6DS3_ACC_SCALE_16g; break;
-        default: return ESP_ERR_INVALID_ARG;
-    }
-    accel_factor = (float)range / 32767;
-    return write_reg(REG_CTRL1_XL, rate << 4 | rBits << 2 | filter);
+// range: 2, 4, 8, 16 (G)
+// rate: 0, 12, 26, 52, 104, 208, 416, 833, 1666, 3332, 6664 (Hz)
+// filter: 50, 100, 200, 400 (Hz)
+esp_err_t lsm6ds3_set_accel(imu_i2c_t *i2c, uint32_t *range, uint32_t *rate, uint32_t* filter) {
+    uint8_t scaleIdx = findIdx(*range, accel_scale_list, ARRAY_SIZE(accel_scale_list));
+    uint8_t odrIdx = findIdx(*rate, data_rate_list, ARRAY_SIZE(data_rate_list));
+    uint8_t filerIdx = findIdx(*filter, filter_list, ARRAY_SIZE(filter_list));
+    *range = accel_scale_list[scaleIdx];
+    *rate = data_rate_list[odrIdx];
+    *filter = filter_list[filerIdx];
+    accel_factor = (float)accel_scale_list[scaleIdx] / 32767;
+    const uint8_t remap[] = { 0b00, 0b10, 0b11, 0b01 }; // 2, 4, 8, 16
+    return i2c->write_reg(LSM6DS3_ADDR, REG_CTRL1_XL, odrIdx << 4 | remap[scaleIdx] << 2 | (3-filerIdx));
 }
-esp_err_t lsm6ds3_set_gyro(uint16_t range, lsm6ds3_gyro_rate_t rate) {
-    uint8_t rBits;
-    switch (range) {
-        case 245: rBits = LSM6DS3_GYRO_SCALE_245dps; break;
-        case 500: rBits = LSM6DS3_GYRO_SCALE_500dps; break;
-        case 1000: rBits = LSM6DS3_GYRO_SCALE_1000dps; break;
-        case 2000: rBits = LSM6DS3_GYRO_SCALE_2000dps; break;
-        default: return ESP_ERR_INVALID_ARG;
-    }
-    gyro_factor = (float)range / 32767;
-    return write_reg(REG_CTRL2_G, rate << 4 | rBits << 2);
+// range: 125, 250, 500, 1000, 2000 (dps)
+// rate: 0, 12, 26, 52, 104, 208, 416, 833, 1666 (Hz)
+esp_err_t lsm6ds3_set_gyro(imu_i2c_t *i2c, uint32_t *range, uint32_t *rate) {
+    uint8_t scaleIdx = findIdx(*range, gyro_scale_list, ARRAY_SIZE(gyro_scale_list));
+    uint8_t odrIdx = findIdx(*rate, data_rate_list, ARRAY_SIZE(data_rate_list)-2);
+    *range = gyro_scale_list[scaleIdx];
+    *rate = data_rate_list[odrIdx];
+    gyro_factor = (float)gyro_scale_list[scaleIdx] / 32767;
+    if (scaleIdx == 0) scaleIdx = 1;
+    else scaleIdx = (scaleIdx-1) << 1;
+    return i2c->write_reg(LSM6DS3_ADDR, REG_CTRL2_G, odrIdx << 4 | scaleIdx << 1);
 }
 
-esp_err_t lsm6ds3_read(lsm6ds3_data_t *data) {
+esp_err_t lsm6ds3_read(imu_i2c_t *i2c, imu_data_t *data) {
     esp_err_t err;
     int16_t buffer[7] = {0};
-    err = read_reg(REG_OUT_TEMP_L, (uint8_t*)&buffer, sizeof(buffer));
+    err = i2c->read_reg(LSM6DS3_ADDR, REG_OUT_TEMP_L, (uint8_t*)&buffer, sizeof(buffer));
     int16_t temp = buffer[0];
     int16_t gyroX = buffer[1];
     int16_t gyroY = buffer[2];
