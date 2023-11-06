@@ -17,9 +17,9 @@ extern "C" {
 #include "periph_regmap.h"
 
 // Contains X4 board revision
-extern uint32_t bsp_boardRevision;
+extern uint32_t bsp_board_revision;
 // Contains X4 driver firmware version
-extern uint32_t bsp_driverVersion;
+extern uint32_t bsp_driver_version;
 
 /**
  * Establish communication with peripheral driver

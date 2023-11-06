@@ -13,7 +13,7 @@
 #include "driver/gpio.h"
 
 #include "periph_driver.h"
-#include "bsp/pin_map.h"
+#include "bsp/roboboard_x4.h"
 
 #define GPIO_SEL(pin)   ((uint64_t)(((uint64_t)1)<<(pin)))
 
@@ -23,8 +23,8 @@
 static TimerHandle_t tickTimer;
 static StaticTimer_t tickTimerBuffer;
 static uint8_t initialized = 0;
-uint32_t bsp_boardRevision;
-uint32_t bsp_driverVersion;
+uint32_t bsp_board_revision;
+uint32_t bsp_driver_version;
 
 // Initialize UART interface to communicate with peripheral driver
 static esp_err_t UART_init(void) {
@@ -94,20 +94,20 @@ esp_err_t periph_driver_init(void) {
         return ESP_ERR_TIMEOUT;
     }
     // Read information
-    bsp_boardRevision = periph_driver_read(PERIPH_DRIVER_GET_BOARD);
-    bsp_driverVersion = periph_driver_read(PERIPH_DRIVER_GET_VERSION);
+    bsp_board_revision = periph_driver_read(PERIPH_DRIVER_GET_BOARD);
+    bsp_driver_version = periph_driver_read(PERIPH_DRIVER_GET_VERSION);
     // Check if data is valid
-    if (bsp_boardRevision == 0 || bsp_driverVersion == 0)
+    if (bsp_board_revision == 0 || bsp_driver_version == 0)
         return ESP_ERR_INVALID_RESPONSE;
     // Convert version to correct format
-    if (bsp_driverVersion < 100) bsp_driverVersion *= 10;
-    if (bsp_driverVersion > 10000) {
-        uint32_t v = (bsp_driverVersion >> 24) & 0xF;
+    if (bsp_driver_version < 100) bsp_driver_version *= 10;
+    if (bsp_driver_version > 10000) {
+        uint32_t v = (bsp_driver_version >> 24) & 0xF;
         v *= 10;
-        v += (bsp_driverVersion >> 16) & 0xFF;
+        v += (bsp_driver_version >> 16) & 0xFF;
         v *= 10;
-        v += (bsp_driverVersion >> 8) & 0xFF;
-        bsp_driverVersion = v;
+        v += (bsp_driver_version >> 8) & 0xFF;
+        bsp_driver_version = v;
     }
     // Reinitialize chip to ignore previous configuration
     periph_driver_write(PERIPH_DRIVER_SET_INIT, 0);

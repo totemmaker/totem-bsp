@@ -57,7 +57,7 @@ esp_err_t bsp_can_send(uint32_t id, uint8_t *data, uint8_t len);
 /// @param len [0:8] data length
 /// @return ESP error
 inline esp_err_t bsp_can_send_std(uint32_t id, uint8_t *data, uint8_t len) {
-    return bsp_can_send(id, NULL, len);
+    return bsp_can_send(id, data, len);
 }
 
 /// @brief Send extended CAN packet
@@ -66,7 +66,7 @@ inline esp_err_t bsp_can_send_std(uint32_t id, uint8_t *data, uint8_t len) {
 /// @param len [0:8] data length
 /// @return ESP error
 inline esp_err_t bsp_can_send_ext(uint32_t id, uint8_t *data, uint8_t len) {
-    return bsp_can_send(id | BSP_CAN_FlagExt, NULL, len);
+    return bsp_can_send(id | BSP_CAN_FlagExt, data, len);
 }
 
 /// @brief Send standard remote request frame (no data)

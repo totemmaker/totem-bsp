@@ -8,151 +8,307 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
-#include "driver/gpio.h"
-#include "hal/adc_types.h"
-
 #include "esp_timer.h"
 #include "esp_mac.h"
 
+#include "driver/gpio.h"
+#include "hal/adc_types.h"
+
 #include "bsp/roboboard_x4.h"
 #include "lib/periph_driver.h"
-
+// Macros to return peripheral port command and GPIO pin setup
 #define RegPort(cmd, port) (cmd + ((port+1)*0x10))
 #define GPIO_SEL(pin)   ((uint64_t)(((uint64_t)1)<<(pin)))
-
-static int32_t bsp_cmd_data[BSP_CMD_MAX][4];
-static const int32_t bsp_cmd_limit[BSP_CMD_MAX] = {
-    [BSP_BOARD_SERIAL]         = 0, // Board serial [0:0x7FFF]
-    [BSP_BOARD_REVISION]       = 0, // Board revision [0:990]
-    [BSP_DRIVER_FIRMWARE]      = 0, // Driver firmware version [0:999]
-    [BSP_BUTTON_STATE]         = 0, // Button state [0:1]
-    [BSP_LED_STATE]            =-1, // LED state [0:any]
-    [BSP_CAN_STATE]            = 1, // Disable / Enable CAN bus transceiver [0:1]
-    [BSP_5V_STATE]             =-1, // Disable / Enable 5V power rail [0:any]
-    [BSP_DC_STATE]             = 0, // Is DC jack plugged? [0:1] (v1.0 only)
-    [BSP_USB_STATE]            = 0, // Is USB cable plugged? [0:1]
-    [BSP_BATTERY_VOLTAGE]      = 0, // Battery voltage [8400:12600]
-    [BSP_BATTERY_STATE]        = 0, // Battery state [0 - none, 1 - charging]
-
-    [BSP_DC_POWER]             =   -100, // Write power to motor [-100:100]. 0 - stop
-    [BSP_DC_BRAKE]             =    100, // Apply braking power [0:100] (0 - coast)
-    [BSP_DC_TONE]              =      0, // AB, CD group. Play tone on motor [0:20000]. ((duration << 16) | freq)
-    [BSP_DC_CONFIG_INVERT]     =     -1, // Invert port no / yes [0:any]
-    [BSP_DC_CONFIG_FREQUENCY]  = 250000, // AB, CD group. Set PWM frequency [0:250000]
-    [BSP_DC_CONFIG_BRAKE]      =    100, // Set autobrake power. (Braking when power = 0) [0:100]
-    [BSP_DC_CONFIG_ENABLE]     =     -1, // Disabled / Enabled [0:any]
-
-    [BSP_SERVO_PULSE]          = 0, // Write pulse [0:period]. ((duration << 16) | pulse)
-    [BSP_SERVO_CONFIG_INVERT]  =-1, // Invert port no / yes [0:any]
-    [BSP_SERVO_CONFIG_SPEED]   = 0, // Limit servo speed [0:(rpm*60)]
-    [BSP_SERVO_CONFIG_PERIOD] = 0xFFFF, // ABC group. PWM period [1:0xFFFF] (default 20000us)
-    [BSP_SERVO_CONFIG_RANGE]   = 0, // Microseconds range of 180 degrees (min << 16 | max)
-    [BSP_SERVO_CONFIG_ENABLE]  =-1, // Disabled / Enabled [0:any]
-
-    [BSP_RGB_COLOR]            = 0, // HEX color with alpha [0:0xFFFFFFFF]
-    [BSP_RGB_FADE_COLOR]       = 0, // Fade HEX color with alpha [0:0xFFFFFFFF]
-    [BSP_RGB_FADE_START]       = 0, // Start fade animation [0:(duration ms)]
-    [BSP_RGB_CONFIG_ENABLE]    =-1, // Disabled / Enabled [0:any]
-};
-
+// Amount of peripheral ports available
+#define DC_CNT 4
+#define SERVO_CNT 3
+#define RGB_CNT 4
+// IDF version dependent ADC setup functions
 void bsp_adc1_init(adc_channel_t channel);
 uint32_t bsp_adc1_get_raw();
 uint32_t bsp_adc1_raw_to_voltage(uint32_t adc);
-
-static bsp_cmd_change_func_t bsp_cmd_callback[3];
-static volatile uint32_t bsp_battery_stateTime = 0;
-
-static void execute_bsp_callback(bsp_cmd_t cmd, uint8_t port, int32_t value, uint8_t isr) {
-    for (int i=0; i<3; i++) {
-        if (bsp_cmd_callback[i] == 0) break;
-        bsp_cmd_callback[i](cmd, port, value, isr);
-    }
-}
-
-static uint32_t IRAM_ATTR getUptime() {
-    return (uint32_t) (esp_timer_get_time() / 1000ULL);
-}
-
-static void IRAM_ATTR bsp_button_irq(void *arg) {
-    // Call update handler on button state change
-    execute_bsp_callback(BSP_BUTTON_STATE, 0, !gpio_get_level(BSP_IO_BUTTON), 1);
-}
-
-static void IRAM_ATTR bsp_battery_charging_irq(void *arg) {
-    // Store timestamp on charging LED state change
-    bsp_battery_stateTime = getUptime();
-}
-
-int bsp_board_init(void) {
-    esp_err_t err;
-    // Install ISR service
-    gpio_install_isr_service(ESP_INTR_FLAG_IRAM);
-    // Initialize LED pin
+// Runtime states
+static bool bsp_initialized = false;
+static uint32_t bsp_servo_period = 20000;
+static uint32_t bsp_dc_frequency[2] = { 50, 50 };
+// Board initialization function
+esp_err_t bsp_board_init(void) {
+    esp_err_t err = ESP_FAIL;
     gpio_config_t pGPIOConfig = {0};
-    pGPIOConfig.mode = GPIO_MODE_INPUT_OUTPUT;
-    pGPIOConfig.pin_bit_mask = GPIO_SEL(BSP_IO_LED);
+    // Initialize LED & CAN transceiver enable pin
+    gpio_set_level(BSP_IO_CAN_EN, 1); // Turn transceiver Off
+    pGPIOConfig.mode = GPIO_MODE_OUTPUT;
+    pGPIOConfig.pin_bit_mask = GPIO_SEL(BSP_IO_LED)|GPIO_SEL(BSP_IO_CAN_EN);
     gpio_config(&pGPIOConfig);
     // Initialize DC & USB detect pins
     pGPIOConfig.mode = GPIO_MODE_INPUT;
-    pGPIOConfig.pin_bit_mask = GPIO_SEL(BSP_IO_DC_DETECT)|GPIO_SEL(BSP_IO_USB_DETECT);
+    pGPIOConfig.pin_bit_mask = GPIO_SEL(BSP_IO_POWER_DETECT)|GPIO_SEL(BSP_IO_USB_DETECT);
     gpio_config(&pGPIOConfig);
     // Initialize Button pin
-    pGPIOConfig.intr_type = GPIO_INTR_ANYEDGE;
     pGPIOConfig.pull_up_en = GPIO_PULLUP_ENABLE;
     pGPIOConfig.pin_bit_mask = GPIO_SEL(BSP_IO_BUTTON);
-    gpio_config(&pGPIOConfig);
-    gpio_isr_handler_add(BSP_IO_BUTTON, bsp_button_irq, NULL);
-    // Initialize Battery charging indication pin
-    pGPIOConfig.intr_type = GPIO_INTR_ANYEDGE;
-    pGPIOConfig.pull_up_en = GPIO_PULLUP_ENABLE;
-    pGPIOConfig.pin_bit_mask = GPIO_SEL(BSP_IO_BATTERY_CHARGE);
-    gpio_config(&pGPIOConfig);
-    gpio_isr_handler_add(BSP_IO_BATTERY_CHARGE, bsp_battery_charging_irq, NULL);
-    // Initialize CAN transceiver enable pin
-    gpio_set_level(BSP_IO_CAN_EN, 1); // Turn transceiver Off
-    pGPIOConfig.mode = GPIO_MODE_INPUT_OUTPUT;
-    pGPIOConfig.pin_bit_mask = ((uint64_t)1)<<BSP_IO_CAN_EN;
     gpio_config(&pGPIOConfig);
     // Initialize battery analog read
     bsp_adc1_init(ADC_CHANNEL_0); // (BSP_IO_BATTERY_VOLTAGE) GPIO36 (SENSOR_VP) of ADC1
     // Establish connection to peripheral driver
     err = periph_driver_init();
-    if (err) return err;
-    // Load default peripheral driver configuration
-    bsp_cmd_data[BSP_5V_STATE][0] = 1;
-    bsp_cmd_data[BSP_DC_CONFIG_FREQUENCY][0] = 50;
-    bsp_cmd_data[BSP_DC_CONFIG_FREQUENCY][2] = 50;
-    bsp_cmd_data[BSP_SERVO_CONFIG_PERIOD][0] = 20000;
-    for (int port=0; port<4; port++) {
-        bsp_cmd_data[BSP_DC_CONFIG_ENABLE][port] = 1;
-        bsp_cmd_data[BSP_RGB_CONFIG_ENABLE][port] = 1;
-        bsp_cmd_data[BSP_SERVO_CONFIG_ENABLE][port] = 1;
-        bsp_cmd_data[BSP_SERVO_CONFIG_RANGE][port] = (500 << 16 | 2500);
-    }
     // Return initialization state
+    if (err == ESP_OK) bsp_initialized = true;;
+    return err;
+}
+// Handler for "board" command write
+static int bsp_board_cmd_write(bsp_cmd_t cmd, uint32_t value) {
+    // Handle commands
+    switch (cmd) {
+    case BSP_LED_STATE: { gpio_set_level(BSP_IO_LED, !!value); break; }
+    case BSP_CAN_STATE: { gpio_set_level(BSP_IO_CAN_EN, !value); break; }
+    case BSP_5V_STATE: { periph_driver_write(PERIPH_DRIVER_CTRL_POWER_5V, !!value); break; }
+    default: return ESP_ERR_NOT_SUPPORTED;
+    }
     return ESP_OK;
 }
-
-static int32_t bsp_board_cmd_read(bsp_cmd_t cmd) {
+// Handler for "DC" commands write
+static int bsp_dc_cmd_write(bsp_cmd_t cmd, int8_t port, int32_t value) {
+    PeriphRegMap reg;
+    // Bugfix: DC power is not reset if tone is applied. Reset power manually before writing tone.
+    static int8_t dc_power[DC_CNT] = {0};
+    // Handle commands
     switch (cmd) {
-    case BSP_BOARD_SERIAL: {
-        // Generate 15 bit serial number from MAC
-        uint64_t chipmacid = 0LL;
-        esp_efuse_mac_get_default((uint8_t*) (&chipmacid));
-        return chipmacid & 0x7FFF;
+    case BSP_DC_POWER: {
+        // Limit to [-100:100]
+        if (value < -100 || value > 100) return ESP_ERR_INVALID_SIZE;
+        if (port == -1) { // Write power to all ports
+            reg = PERIPH_DC_SET_ABCD_POWER;
+            for (int i=0; i<DC_CNT; i++) { dc_power[i] = value; }
+            value |= (((int8_t)value)<<8)|(((int8_t)value)<<16)|(((int8_t)value)<<24);
+        }
+        else { // Write power to single port
+            reg = RegPort(PERIPH_DC_X_POWER, port);
+            dc_power[port] = value;
+        }
         break;
     }
-    case BSP_BOARD_REVISION: { return bsp_boardRevision; }
-    case BSP_DRIVER_FIRMWARE: { return bsp_driverVersion; }
-    case BSP_BUTTON_STATE: { return !gpio_get_level(BSP_IO_BUTTON); }
-    case BSP_LED_STATE: { return gpio_get_level(BSP_IO_LED); }
-    case BSP_CAN_STATE: { return !gpio_get_level(BSP_IO_CAN_EN); }
-    case BSP_5V_STATE: { return bsp_cmd_data[BSP_5V_STATE][0]; }
-    case BSP_DC_STATE: { 
-        if (bsp_boardRevision == 11) return 0; // Not supported
-        return gpio_get_level(BSP_IO_DC_DETECT) == 0;
+    case BSP_DC_BRAKE: {
+        // Limit to [0:100]
+        if (value < 0 || value > 100) return ESP_ERR_INVALID_SIZE;
+        if (port == -1) { // Write brake to all ports
+            reg = PERIPH_DC_SET_ABCD_BRAKE;
+            for (int i=0; i<DC_CNT; i++) { dc_power[i] = 0; }
+            value |= (((uint8_t)value)<<8)|(((uint8_t)value)<<16)|(((uint8_t)value)<<24);
+        }
+        else { // Write brake to single port
+            reg = RegPort(PERIPH_DC_X_BRAKE, port);
+            dc_power[port] = value;
+        }
+        break;
     }
-    case BSP_USB_STATE: { return gpio_get_level(BSP_IO_USB_DETECT) == 0; }
+    case BSP_DC_TONE: {
+        // Limit to [0:20000]
+        if ((value & 0xFFFF) > 20000) return ESP_ERR_INVALID_SIZE;
+        if (port == -1) { // Write tone to all ports
+            for (int i=0; i<DC_CNT; i++) { if (dc_power[i]) { bsp_dc_cmd_write(BSP_DC_POWER, -1, 0); break; }}
+            periph_driver_write(PERIPH_DC_SET_AB_TONE, value);
+            periph_driver_write(PERIPH_DC_SET_CD_TONE, value);
+            return ESP_OK;
+        }
+        else if (port < 2) { // Write tone to AB group
+            if (dc_power[0]) { bsp_dc_cmd_write(BSP_DC_POWER, 0, 0); }
+            if (dc_power[1]) { bsp_dc_cmd_write(BSP_DC_POWER, 1, 0); }
+            reg = PERIPH_DC_SET_AB_TONE;
+        }
+        else { // Write tone to CD group
+            if (dc_power[2]) { bsp_dc_cmd_write(BSP_DC_POWER, 2, 0); }
+            if (dc_power[3]) { bsp_dc_cmd_write(BSP_DC_POWER, 3, 0); }
+            reg = PERIPH_DC_SET_CD_TONE;
+        }
+        break;
+    }
+    case BSP_DC_CONFIG_FREQUENCY: {
+        // Limit to [1:250000]
+        if (value < 1 || value > 250000) return ESP_ERR_INVALID_SIZE;
+        if (port == -1) { // Write frequency to all ports
+            periph_driver_write(PERIPH_DC_SET_AB_FREQUENCY, value);
+            periph_driver_write(PERIPH_DC_SET_CD_FREQUENCY, value);
+            bsp_dc_frequency[0] = value;
+            bsp_dc_frequency[1] = value;
+            return ESP_OK;
+        }
+        else { // Write frequency to AB or CD group
+            reg = port < 2 ? PERIPH_DC_SET_AB_FREQUENCY : PERIPH_DC_SET_CD_FREQUENCY;
+            bsp_dc_frequency[port < 2 ? 0 : 1] = value;
+        }
+        break;
+    }
+    case BSP_DC_CONFIG_ENABLE: {
+        if (port == -1) { // Switch all ports
+            reg = PERIPH_DC_SET_ABCD_ENABLE;
+            value = value ? 0x01010101 : 0;
+        }
+        else { // Switch single port
+            reg = RegPort(PERIPH_DC_X_ENABLE, port);
+            value = !!value;
+        }
+        break;
+    }
+    default: return ESP_ERR_NOT_FOUND;
+    }
+    // Send command to peripheral driver
+    periph_driver_write(reg, value);
+    return ESP_OK;
+}
+// Handler for "servo" commands write
+static int bsp_servo_cmd_write(bsp_cmd_t cmd, int8_t port, uint32_t value) {
+    // Validate port. X4 has 3 servo ports
+    if (port >= SERVO_CNT) { return ESP_ERR_INVALID_ARG; }
+    PeriphRegMap reg;
+    // Bugfix: Workaround for mixed servo ports in older RoboBoard X4 v1.0 revision
+    if (bsp_board_revision == 10) {
+        if (port == 1) port = 2;
+        else if (port == 2) port = 1;
+    }
+    // Handle commands
+    switch (cmd) {
+    case BSP_SERVO_PULSE: {
+        // Limit to [0:bsp_servo_period]
+        if ((value & 0xFFFF) > bsp_servo_period) return ESP_ERR_INVALID_SIZE;
+        // Write pulse (us) to all ports or single one
+        reg = port == -1 ? PERIPH_SERVO_SET_ABC_PULSE : RegPort(PERIPH_SERVO_X_PULSE, port);
+        periph_driver_write(reg, value);
+        break;
+    }
+    case BSP_SERVO_CONFIG_SPEED: {
+        if (port == -1) { // Write servo speed to all ports
+            for (int i=0; i<SERVO_CNT; i++) {
+                periph_driver_write(RegPort(PERIPH_SERVO_X_SPEED, i), value);
+            }
+        }
+        else { // Write servo speed to single port
+            reg = RegPort(PERIPH_SERVO_X_SPEED, port);
+            periph_driver_write(reg, value);
+        }
+        break;
+    }
+    case BSP_SERVO_CONFIG_PERIOD: {
+        // Limit to [1:0xFFFF]
+        if (value < 1 || value > 0xFFFF) return ESP_ERR_INVALID_SIZE;
+        bsp_servo_period = value;
+        // Write servo period (us) to all ports
+        periph_driver_write(PERIPH_SERVO_SET_ABC_PERIOD, value);
+        // Bugfix: ignore internal servo limit and inversion. Allow full range control
+        for (int i=0; i<SERVO_CNT; i++) {
+            periph_driver_write(RegPort(PERIPH_SERVO_X_PULSE_MIN, i), 0);
+            periph_driver_write(RegPort(PERIPH_SERVO_X_PULSE_MAX, i), value);
+        }
+        break;
+    }
+    case BSP_SERVO_CONFIG_ENABLE: {
+        // Switch all servo ports or only single one
+        reg = port == -1 ? PERIPH_SERVO_SET_ABC_ENABLE : RegPort(PERIPH_SERVO_X_ENABLE, port);
+        periph_driver_write(reg, !!value);
+        break;
+    }
+    default: return ESP_ERR_NOT_FOUND;
+    };
+    
+    return ESP_OK;
+}
+// Check if all RGB lights are enabled
+#define RGB_ENABLED_ALL() (rgb_en[0] && rgb_en[1] && rgb_en[2] && rgb_en[3])
+// Handler for "rgb" commands write
+static int bsp_rgb_cmd_write(bsp_cmd_t cmd, int8_t port, uint32_t value) {
+    // Workaround: hold states to mimic individual RGB enable control
+    static uint8_t rgb_en[RGB_CNT] = {1,1,1,1};
+    static uint32_t rgb_last[RGB_CNT];
+    static uint32_t rgb_fade[RGB_CNT];
+    // Handle commands
+    switch (cmd) {
+    case BSP_RGB_COLOR: {
+        if (port == -1 && RGB_ENABLED_ALL()) { // Write color to all LED
+            periph_driver_write(PERIPH_RGB_SET_ABCD_SET, value);
+            for (int i=0; i<RGB_CNT; i++) { rgb_last[i] = value; }
+        }
+        else if (rgb_en[port]) { // Write color to single LED
+            periph_driver_write(RegPort(PERIPH_RGB_X_SET, port), value);
+            rgb_last[port] = value;
+        }
+        break; 
+    }
+    case BSP_RGB_FADE_COLOR: {
+        if (port == -1 && RGB_ENABLED_ALL()) { // Set fade color to all LED
+            periph_driver_write(PERIPH_RGB_SET_ABCD_FADE, value);
+            for (int i=0; i<RGB_CNT; i++) { rgb_fade[i] = value; }
+        }
+        else if (rgb_en[port]) { // Set fade color to single LED
+            periph_driver_write(RegPort(PERIPH_RGB_X_SET_FADE, port), value);
+            rgb_fade[port] = value;
+        }
+        break; 
+    }
+    case BSP_RGB_FADE_START: {
+        if (port == -1 && RGB_ENABLED_ALL()) { // Start fade for all LED
+            periph_driver_write(PERIPH_RGB_SET_ABCD_START_FADE, value);
+            for (int i=0; i<RGB_CNT; i++) { rgb_last[i] = rgb_fade[i]; }
+        }
+        else if (rgb_en[port]) { // Start fade for single LED
+            periph_driver_write(RegPort(PERIPH_RGB_X_START_FADE, port), value);
+            rgb_last[port] = rgb_fade[port];
+        }
+        break;
+    }
+    case BSP_RGB_CONFIG_ENABLE: {
+        if (port == -1) { // Switch all LED
+            for (int i=0; i<RGB_CNT; i++) {
+                rgb_en[i] = value;
+                periph_driver_write(RegPort(PERIPH_RGB_X_SET, i), value ? rgb_last[i] : 0);
+            }
+        }
+        else { // Switch single LED
+            rgb_en[port] = value;
+            periph_driver_write(RegPort(PERIPH_RGB_X_SET, port), value ? rgb_last[port] : 0);
+        }
+        break;
+    }
+    default: return ESP_ERR_NOT_FOUND;
+    }
+    return ESP_OK;
+}
+// Global command write function
+esp_err_t bsp_cmd_write(bsp_cmd_t cmd, int8_t port, int32_t value) {
+    if (!bsp_initialized) { return ESP_ERR_INVALID_STATE; }
+    esp_err_t err = ESP_FAIL;
+    // Validate ports. X4 has maximum of 4 ports
+    if (port < -1 || port > 3) { return ESP_ERR_INVALID_ARG; }
+    // Validate commands range
+    if (cmd >= BSP_CMD_MAX) {
+        return ESP_ERR_NOT_FOUND;
+    }
+    else if (cmd >= BSP_RGB_COLOR) { // Call RGB command handler
+        err = bsp_rgb_cmd_write(cmd, port, value);
+    }
+    else if (cmd >= BSP_SERVO_PULSE) { // Call Servo command handler
+        err = bsp_servo_cmd_write(cmd, port, value);
+    }
+    else if (cmd >= BSP_DC_POWER) { // Call DC command handler
+        err = bsp_dc_cmd_write(cmd, port, value);
+    }
+    else { // Call board command handler
+        err = bsp_board_cmd_write(cmd, value);
+    }
+    return err;
+}
+// Global command read function
+int32_t bsp_cmd_read(bsp_cmd_t cmd, uint8_t port) {
+    if (!bsp_initialized) { return 0; }
+    // Handle read supported commands
+    switch (cmd) {
+    case BSP_BOARD_REVISION: { return bsp_board_revision; }
+    case BSP_DRIVER_FIRMWARE: { return bsp_driver_version; }
+    case BSP_BUTTON_STATE: { return !gpio_get_level(BSP_IO_BUTTON); }
+    case BSP_POWER_STATE: {
+        if (bsp_board_revision == 11) return 0; // Not supported on v1.1
+        return !gpio_get_level(BSP_IO_POWER_DETECT);
+    }
+    case BSP_USB_STATE: { return !gpio_get_level(BSP_IO_USB_DETECT); }
     case BSP_BATTERY_VOLTAGE: {
         // Read pin voltage
         uint32_t adcReading = 0;
@@ -166,355 +322,55 @@ static int32_t bsp_board_cmd_read(bsp_cmd_t cmd) {
         // Covert pin voltage to battery voltage
         return pinVoltage * 1124 / 124; // R1: 1M, R2: 124k
     }
-    case BSP_BATTERY_STATE: {
-        // Read battery charging state
-        if (gpio_get_level(BSP_IO_BATTERY_CHARGE) == 1 
-        && (getUptime() - bsp_battery_stateTime) > 1500) return 1;
-        else return 0;
-        break;
-    }
-    default: return ESP_ERR_NOT_FOUND;
-    }
-    return ESP_OK;
-}
-
-static int bsp_board_cmd_write(bsp_cmd_t cmd, int8_t port, uint32_t value) {
-    switch (cmd) {
-    case BSP_LED_STATE: { gpio_set_level(BSP_IO_LED, value); break; }
-    case BSP_CAN_STATE: { gpio_set_level(BSP_IO_CAN_EN, !value); break; }
-    case BSP_5V_STATE: { periph_driver_write(PERIPH_DRIVER_CTRL_POWER_5V, value); break; }
-    default: return ESP_ERR_NOT_SUPPORTED;
-    }
-    return ESP_OK;
-}
-
-static void cmd_reset_value(bsp_cmd_t cmd, uint8_t port, uint32_t value) {
-    if (bsp_cmd_data[cmd][port] != value) {
-        bsp_cmd_data[cmd][port] = value;
-        execute_bsp_callback(cmd, port, value, 0);
-    }
-}
-
-static void dc_cmd_update(bsp_cmd_t cmd, uint8_t port, uint32_t value) {
-
-    switch (cmd) {
-    case BSP_DC_POWER: {
-        uint32_t brake_power = (value == 0) ? bsp_cmd_data[BSP_DC_CONFIG_BRAKE][port] : 0;
-        cmd_reset_value(BSP_DC_BRAKE, port, brake_power);
-        cmd_reset_value(BSP_DC_TONE, port < 2 ? 0 : 2, 0);
-        break;
-    }
-    case BSP_DC_BRAKE: {
-        cmd_reset_value(BSP_DC_POWER, port, 0);
-        cmd_reset_value(BSP_DC_TONE, port < 2 ? 0 : 2, 0);
-        break;
-    }
-    case BSP_DC_TONE: {
-        for (int i=port; i<=(port+1); i++) {
-            // Reset related values
-            cmd_reset_value(BSP_DC_POWER, i, 0);
-            cmd_reset_value(BSP_DC_BRAKE, i, 0);
-        }
-        break;
-    }
-    }
-}
-
-int bsp_dc_cmd_write(bsp_cmd_t cmd, int8_t port, uint32_t value) {
-    if (port < 0 || port > 3) { return ESP_ERR_INVALID_ARG; }
-
-    PeriphRegMap reg;
-
-    switch (cmd) {
-    case BSP_DC_POWER: {
-        // Write power to DC port
-        reg = RegPort(PERIPH_DC_X_POWER, port);
-        periph_driver_write(reg, value);
-        // Reset related values
-        dc_cmd_update(cmd, port, value);
-        break;
-    }
-    case BSP_DC_BRAKE: {
-        // Write brake to DC port
-        reg = RegPort(PERIPH_DC_X_BRAKE, port);
-        periph_driver_write(reg, value);
-        // Reset related values
-        dc_cmd_update(cmd, port, value);
-        break;
-    }
-    case BSP_DC_TONE: {
-        if (port == 1 || port == 3) return ESP_ERR_INVALID_ARG;
-        if ((value & 0xFFFF) > 20000) return ESP_ERR_INVALID_SIZE;
-        // Write tone to DC motor group
-        reg = port < 2 ? PERIPH_DC_SET_AB_TONE : PERIPH_DC_SET_CD_TONE;
-        periph_driver_write(reg, value);
-        // Reset both channels
-        dc_cmd_update(cmd, port, value);
-        break;
-    }
-    case BSP_DC_CONFIG_INVERT: {
-        // Write DC port pin swap
-        reg = RegPort(PERIPH_DC_X_INVERT, port);
-        periph_driver_write(reg, value);
-        break;
-    }
     case BSP_DC_CONFIG_FREQUENCY: {
-        if (port == 1 || port == 3) break;
-        // Write DC ports AB or CD PWM frequency
-        reg = port < 2 ? PERIPH_DC_SET_AB_FREQUENCY : PERIPH_DC_SET_CD_FREQUENCY;
-        periph_driver_write(reg, value);
-        break;
-    }
-    case BSP_DC_CONFIG_BRAKE: {
-        // Write DC port autobrake if power == 0
-        reg = RegPort(PERIPH_DC_X_AUTOBRAKE, port);
-        periph_driver_write(reg, value);
-        // Reset brake value
-        if (bsp_cmd_data[BSP_DC_POWER][port] == 0) {
-            cmd_reset_value(BSP_DC_BRAKE, port, value);
-        }
-        break;
-    }
-    case BSP_DC_CONFIG_ENABLE: {
-        // Write DC port enable
-        reg = RegPort(PERIPH_DC_X_ENABLE, port);
-        periph_driver_write(reg, value);
-        break;
-    }
-    default: return ESP_ERR_NOT_FOUND;
-    }
-
-    return ESP_OK;
-}
-
-int bsp_servo_cmd_write(bsp_cmd_t cmd, int8_t port, uint32_t value) {
-    if (port < 0 || port > 2) { return ESP_ERR_INVALID_ARG; }
-    
-    PeriphRegMap reg;
-
-    switch (cmd) {
-    case BSP_SERVO_PULSE: {
-        // Write servo port pulse (us)
-        uint32_t pulseMin = bsp_cmd_data[BSP_SERVO_CONFIG_RANGE][port] >> 16;
-        uint32_t pulseMax = bsp_cmd_data[BSP_SERVO_CONFIG_RANGE][port] & 0xFFFF;
-        uint32_t duration = value >> 16;
-        uint32_t pulse = value & 0xFFFF;
-        if (pulse > pulseMax) return ESP_ERR_INVALID_SIZE;
-        if (pulse < pulseMin) return ESP_ERR_INVALID_SIZE;
-        // Swap pulse value if servo direction is inverted
-        if (bsp_cmd_data[BSP_SERVO_CONFIG_INVERT][port]) {
-            pulse = (pulseMin + pulseMax) - pulse;
-        }
-        reg = RegPort(PERIPH_SERVO_X_PULSE, port);
-        periph_driver_write(reg, duration << 16 | pulse);
-        break;
-    }
-    case BSP_SERVO_CONFIG_INVERT: {
-        // In v1.52 internal driver invert doesn't work if writing with duration
-        // Apply manual workaround
-        bsp_cmd_data[BSP_SERVO_CONFIG_INVERT][port] = value ? 1 : 0;
-        return bsp_servo_cmd_write(BSP_SERVO_PULSE, port, bsp_cmd_data[BSP_SERVO_PULSE][port]);
-    }
-    case BSP_SERVO_CONFIG_SPEED: {
-        // Write servo port spin speed
-        reg = RegPort(PERIPH_SERVO_X_SPEED, port);
-        periph_driver_write(reg, value);
-        break;
+        if (port >= DC_CNT) return 0;
+        return bsp_dc_frequency[port < 2 ? 0 : 1];
     }
     case BSP_SERVO_CONFIG_PERIOD: {
-        // Write servo ports ABC PWM period (us)
-        periph_driver_write(PERIPH_SERVO_SET_ABC_PERIOD, value);
-        for (int i=0; i<3; i++) {
-            // Reset range value
-            uint32_t pulseMin = bsp_cmd_data[BSP_SERVO_CONFIG_RANGE][i] >> 16;
-            uint32_t pulseMax = bsp_cmd_data[BSP_SERVO_CONFIG_RANGE][i] & 0xFFFF;
-            if (pulseMin > value) pulseMin = value;
-            if (pulseMax > value) pulseMax = value;
-            cmd_reset_value(BSP_SERVO_CONFIG_RANGE, i, pulseMin << 16 | pulseMax);
-            // Reset pulse value
-            if (bsp_cmd_data[BSP_SERVO_PULSE][i] > value) {
-                cmd_reset_value(BSP_SERVO_PULSE, i, value);
-                periph_driver_write(RegPort(PERIPH_SERVO_X_PULSE, i), value);
-            }
-        }
-        return ESP_OK;
+        if (port >= SERVO_CNT) return 0;
+        return bsp_servo_period;
     }
-    case BSP_SERVO_CONFIG_RANGE: {
-        // Write servo port min, max pulse range
-        uint32_t pulseMin = value >> 16;
-        uint32_t pulseMax = value & 0xFFFF;
-        if (pulseMin > pulseMax) return ESP_ERR_INVALID_SIZE;
-        if (pulseMax > bsp_cmd_data[BSP_SERVO_CONFIG_PERIOD][0]) return ESP_ERR_INVALID_SIZE;
-        periph_driver_write(RegPort(PERIPH_SERVO_X_PULSE_MIN, port), pulseMin);
-        periph_driver_write(RegPort(PERIPH_SERVO_X_PULSE_MAX, port), pulseMax);
-        return ESP_OK;
     }
-    case BSP_SERVO_CONFIG_ENABLE: {
-        // Write servo port enable
-        reg = RegPort(PERIPH_SERVO_X_ENABLE, port);
-        periph_driver_write(reg, value);
-        break;
-    }
-    default: return ESP_ERR_NOT_FOUND;
-    };
-    
-    return ESP_OK;
+    return 0;
 }
-
-#define RGB_ENABLED_ALL() (bsp_cmd_data[BSP_RGB_CONFIG_ENABLE][0] && bsp_cmd_data[BSP_RGB_CONFIG_ENABLE][1] && bsp_cmd_data[BSP_RGB_CONFIG_ENABLE][2] && bsp_cmd_data[BSP_RGB_CONFIG_ENABLE][3])
-
-int bsp_rgb_cmd_write(bsp_cmd_t cmd, int8_t port, uint32_t value) {
-
-    if (port == -1) {
-        // Copy value to all channels
-        for (int i=0; i<4; i++) { cmd_reset_value(cmd, i, value); }
+// Global command interrupt register fuction
+esp_err_t bsp_register_interrupt_callback(bsp_cmd_t cmd, bsp_interrupt_func_t func, void *arg) {
+    if (!bsp_initialized) { return ESP_ERR_INVALID_STATE; }
+    // Check if ISR service is installed
+    static bool isr_installed = false;
+    if (!isr_installed) {
+        esp_err_t err = gpio_install_isr_service(0);
+        isr_installed = (err == ESP_OK) || (err == ESP_ERR_INVALID_STATE);
     }
-
+    if (!isr_installed) return ESP_ERR_INVALID_STATE;
+    // Setup GPIO pin for interrupt
+    gpio_config_t pGPIOConfig = {0};
+    pGPIOConfig.mode = GPIO_MODE_INPUT;
+    pGPIOConfig.intr_type = GPIO_INTR_ANYEDGE;
     switch (cmd) {
-    case BSP_RGB_COLOR: {
-        // Write RGB LED color
-        if (port == -1 && RGB_ENABLED_ALL()) periph_driver_write(PERIPH_RGB_SET_ABCD_SET, value);
-        else if (bsp_cmd_data[BSP_RGB_CONFIG_ENABLE][port]) periph_driver_write(RegPort(PERIPH_RGB_X_SET, port), value);
-        break; 
-    }
-    case BSP_RGB_FADE_COLOR: {
-        // Write RGB LED next fade color
-        if (port == -1 && RGB_ENABLED_ALL()) periph_driver_write(PERIPH_RGB_SET_ABCD_FADE, value);
-        else if (bsp_cmd_data[BSP_RGB_CONFIG_ENABLE][port]) periph_driver_write(RegPort(PERIPH_RGB_X_SET_FADE, port), value);
-        break; 
-    }
-    case BSP_RGB_FADE_START: {
-        // Write RGB LED fade duration & start
-        if (port == -1 && RGB_ENABLED_ALL()) {
-            periph_driver_write(PERIPH_RGB_SET_ABCD_START_FADE, value);
-            for (int i=0; i<4; i++) { bsp_cmd_data[BSP_RGB_COLOR][i] = bsp_cmd_data[BSP_RGB_FADE_COLOR][i]; }
-        }
-        else if (bsp_cmd_data[BSP_RGB_CONFIG_ENABLE][port]) {
-            periph_driver_write(RegPort(PERIPH_RGB_X_START_FADE, port), value);
-            bsp_cmd_data[BSP_RGB_COLOR][port] = bsp_cmd_data[BSP_RGB_FADE_COLOR][port];
-        }
+    case BSP_BUTTON_STATE: {
+        pGPIOConfig.pull_up_en = GPIO_PULLUP_ENABLE;
+        pGPIOConfig.pin_bit_mask = GPIO_SEL(BSP_IO_BUTTON);
+        gpio_isr_handler_add(BSP_IO_BUTTON, func, arg);
         break;
     }
-    case BSP_RGB_CONFIG_ENABLE: {
-        // Write RGB LED enable
-        if (port == -1) {
-            for (int i=0; i<4; i++) {
-                periph_driver_write(RegPort(PERIPH_RGB_X_SET, i), value ? bsp_cmd_data[BSP_RGB_COLOR][i] : 0);
-            }
-        }
-        else {
-            periph_driver_write(RegPort(PERIPH_RGB_X_SET, port), value ? bsp_cmd_data[BSP_RGB_COLOR][port] : 0);
-        }
+    case BSP_POWER_STATE: {
+        if (bsp_board_revision == 11) return ESP_ERR_NOT_SUPPORTED; // Not supported on v1.1
+        pGPIOConfig.pin_bit_mask = GPIO_SEL(BSP_IO_POWER_DETECT);
+        gpio_isr_handler_add(BSP_IO_POWER_DETECT, func, arg);
         break;
     }
-    default: return ESP_ERR_NOT_FOUND;
+    case BSP_USB_STATE: {
+        pGPIOConfig.pin_bit_mask = GPIO_SEL(BSP_IO_USB_DETECT);
+        gpio_isr_handler_add(BSP_IO_USB_DETECT, func, arg);
+        break;
     }
+    default: return ESP_ERR_NOT_SUPPORTED;
+    }
+    gpio_config(&pGPIOConfig);
     return ESP_OK;
 }
-
-static esp_err_t execute_write_cmd(int (*func)(bsp_cmd_t cmd, int8_t port, uint32_t value), bsp_cmd_t cmd, int8_t port, uint32_t value) {
-    esp_err_t err = ESP_OK;
-    // Validate if value has changed
-    if (bsp_cmd_data[cmd][port] == value
-        && cmd != BSP_DC_TONE)
-        return ESP_OK;
-    // Call command handler
-    err = func(cmd, port, value);
-    // Store latest value and call update handlers
-    if (err == ESP_OK && port != -1) {
-        if (cmd == BSP_DC_TONE) { value &= 0xFFFF; }
-        if (cmd == BSP_SERVO_PULSE) { value &= 0xFFFF; }
-        bsp_cmd_data[cmd][port] = value;
-        execute_bsp_callback(cmd, port, value, 0);
-    }
-    return err;
-}
-esp_err_t bsp_cmd_write(bsp_cmd_t cmd, int8_t port, int32_t value) {
-    esp_err_t err = ESP_OK;
-    // Validate commands range
-    if (cmd >= BSP_CMD_MAX) { return ESP_ERR_NOT_FOUND; }
-    // Validate port range
-    if (port < -1 || port > 3) { return ESP_ERR_INVALID_ARG; }
-    // Validate value range
-    int32_t limit = bsp_cmd_limit[cmd];
-    if (limit == 0) { } // No limit
-    else if (limit == -1) { value = value ? 1 : 0; } // Logic level
-    else if (limit < 0) { // Limit with negative value
-        if (value < limit || value > -limit) return ESP_ERR_INVALID_SIZE;
-    }
-    else if (value > limit) return ESP_ERR_INVALID_SIZE; // Positive limit
-    else if (value < 0) return ESP_ERR_INVALID_SIZE; // Only positive allowed
-    // Perform generic feature write
-    if (cmd <= BSP_BATTERY_STATE) { // BOARD commands
-        // Call board command handler
-        err = execute_write_cmd(bsp_board_cmd_write, cmd, 0, value);
-    }
-    else if (cmd <= BSP_DC_CONFIG_ENABLE) { // DC commands
-        // Validate special input cases
-        if (cmd == BSP_DC_CONFIG_FREQUENCY && value == 0) return ESP_ERR_INVALID_SIZE;
-        if (port != -1 && (cmd == BSP_DC_CONFIG_FREQUENCY || cmd == BSP_DC_TONE)) { port = port < 2 ? 0 : 2; }
-        // Write command or loop if -1 passed
-        int start, end;
-        if (port == -1) { start = 0; end = 3; }
-        else { start = port; end = port; }
-        for (port=start; port<=end; port++) {
-            // Only call A and C ports on these commands
-            if (cmd == BSP_DC_CONFIG_FREQUENCY || cmd == BSP_DC_TONE) { if ((port % 2) != 0) continue; }
-            // Call dc command handler
-            err = execute_write_cmd(bsp_dc_cmd_write, cmd, port, value);
-            if (err != ESP_OK) break;
-        }
-    }
-    else if (cmd <= BSP_SERVO_CONFIG_ENABLE) { // SERVO commands
-        // Validate special input cases
-        if (cmd == BSP_SERVO_CONFIG_PERIOD) {
-            if (value == 0) return ESP_ERR_INVALID_SIZE;
-            port = 0;
-        }
-        // Write command or loop if -1 passed
-        int start, end;
-        if (port == -1) { start = 0; end = 2; }
-        else { start = port; end = port; }
-        for (port=start; port<=end; port++) {
-            // Call servo command handler
-            err = execute_write_cmd(bsp_servo_cmd_write, cmd, port, value);
-            if (err != ESP_OK) break;
-        }
-    }
-    else if (cmd <= BSP_RGB_CONFIG_ENABLE) { // RGB commands
-        // Call RGB command handler
-        err = execute_write_cmd(bsp_rgb_cmd_write, cmd, port, value);
-    }
-    return err;
-}
-
-int32_t bsp_cmd_read(bsp_cmd_t cmd, uint8_t port) {
-    // Call board command handler
-    if (cmd <= BSP_BATTERY_STATE) {
-        return bsp_board_cmd_read(cmd);
-    }
-    // Validate command range
-    if (cmd >= BSP_CMD_MAX) return 0;
-    // Validate port range
-    if (port > 3) return 0;
-    // Validate special input cases
-         if (cmd == BSP_SERVO_CONFIG_PERIOD) port = 0;
-    else if (cmd == BSP_DC_CONFIG_FREQUENCY) port = port < 2 ? 0 : 2;
-    else if (cmd == BSP_DC_TONE) port = port < 2 ? 0 : 2;
-    // Return latest value
-    return bsp_cmd_data[cmd][port];
-}
-
-void bsp_callback_register(bsp_cmd_change_func_t callback) {
-    // Find empty slot and register new function
-    for (int i=0; i<3; i++) {
-        if (bsp_cmd_callback[i] == 0) {
-            bsp_cmd_callback[i] = callback;
-            break;
-        }
-    }
-}
-
+// GPIO pin control for older RoboBoard X4 v1.0 revision (not connected to ESP32 directly)
 uint32_t bsp_gpio_digital_read(uint8_t port) {
     return periph_driver_read(RegPort(PERIPH_GPIO_X_DIGITAL_READ, port));
 }
