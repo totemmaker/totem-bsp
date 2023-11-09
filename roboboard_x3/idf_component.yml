@@ -1,0 +1,16 @@
+version: "2.0.0"
+description: Board Support Package for Totem RoboBoard X3
+url: https://github.com/totemmaker/totem-bsp/tree/master/roboboard_x3
+# documentation: https://docs.totemmaker.net/roboboard-x3/
+# issues: https://github.com/totemmaker/totem-bsp/issues
+# discussion: https://forum.totemmaker.net
+
+targets:
+  - esp32
+
+dependencies:
+  idf: ">=4.4"
+
+  led_strip:
+    version: "^2.5.0"
+    public: true
