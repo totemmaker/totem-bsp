@@ -35,13 +35,14 @@ static void TOTEM_TEST_FUNC(_test_case)()
 #define TEST_FLOAT(expected, drift, actual) TotemTest_float(expected, drift, actual, "TEST_FLOAT(" #expected ", " #drift ", " #actual ")", __LINE__)
 #define TEST_EQUAL(expected, actual) TotemTest_equal(expected, actual, "TEST_EQUAL(" #expected ", " #actual ")", __LINE__)
 #define TEST_EQUALF(expected, actual) TotemTest_equal_float(expected, actual, "TEST_EQUALF(" #expected ", " #actual ")", __LINE__)
+#define TEST_EQUAL_ARRAY(expected, array, size) TotemTest_equal_array8(expected, array, size, "TEST_EQUAL_ARRAY(" #expected ", " #array ", " #size ")", __LINE__)
+#define TEST_EQUAL_ARRAYS(array1, array2, size) TotemTest_equal_arrays(array1, array2, size, "TEST_EQUAL_ARRAYS(" #array1 ", " #array2 ", " #size ")", __LINE__)
 #define TEST_NOT_EQUAL(not_expected, actual) TotemTest_not_equal(not_expected, actual, "TEST_NOT_EQUAL(" #not_expected ", " #actual ")", __LINE__)
 #define TEST_LIMIT(from, to, actual) TotemTest_range(from, to, actual, "TEST_LIMIT(" #from ", " #to ", " #actual ")", __LINE__)
 #define TEST_STRING(str1, ...) TotemTest_string("TEST_STRING(" #str1 ", " #__VA_ARGS__")", __LINE__, str1, __VA_ARGS__)
-#define TEST_ARRAY(array, size, actual) TotemTest_array(array, size, actual, "TEST_ARRAY(" #array ", " #size ", " #actual ")", __LINE__)
 #define TEST_VALUES(...){\
 int32_t valueList[] = {__VA_ARGS__};\
-TotemTest_array(valueList, (sizeof(valueList)/4)-1, valueList[(sizeof(valueList)/4)-1], "TEST_VALUES(" #__VA_ARGS__ ")", __LINE__);}
+TotemTest_equal_array32(valueList[0], valueList, sizeof(valueList)/4, "TEST_VALUES(" #__VA_ARGS__ ")", __LINE__);}
 
 #define TEST_PRINT(...) TotemTest_print(__VA_ARGS__)
 #define TEST_MESSAGE(...) TotemTest_set_message(__VA_ARGS__)
@@ -81,10 +82,12 @@ void TotemTest_min(int32_t minimum, int32_t actual,            const char *expre
 void TotemTest_float(float expected, float drift, float actual,const char *expression, uint32_t line);
 void TotemTest_equal(int32_t expected, int32_t actual,         const char *expression, uint32_t line);
 void TotemTest_equal_float(float expected, float actual,       const char *expression, uint32_t line);
+void TotemTest_equal_array8(int32_t expected, uint8_t *array, uint32_t size, const char *expression, uint32_t line);
+void TotemTest_equal_array32(int32_t expected, int32_t *array, uint32_t size, const char *expression, uint32_t line);
+void TotemTest_equal_arrays(uint8_t *array1, uint8_t *array2, uint32_t size, const char *expression, uint32_t line);
 void TotemTest_not_equal(int32_t not_expected, int32_t actual, const char *expression, uint32_t line);
 void TotemTest_range(int32_t from, int32_t to, int32_t actual, const char *expression, uint32_t line);
 void TotemTest_string(const char *expression, uint32_t line, const char *str1, const char *str2, ...);
-void TotemTest_array(int32_t *array, uint32_t size, int32_t actual, const char *expression, uint32_t line);
 void TotemTest_time(uint32_t expected, uint32_t actual,        const char *expression, uint32_t line);
 void TotemTest_fail(const char *expression, uint32_t line, const char *format, ...);
 void TotemTest_print(const char *format, ...);

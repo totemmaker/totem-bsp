@@ -31,6 +31,17 @@ static void print_file(uint32_t line) {
 static void print_expression(const char *expression) {
     printf("Test : %s\n", expression);
 }
+// Print arrat
+static void print_array(uint8_t *array, uint32_t size) {
+    for (int i=0; i<size; i++) {
+        printf(" %" PRIu8, array[i]);
+    }
+}
+static void print_array32(int32_t *array, uint32_t size) {
+    for (int i=0; i<size; i++) {
+        printf(" %" PRId32, array[i]);
+    }
+}
 
 void TotemTest_assert(int32_t result, const char *expression, uint32_t line) {
     if (result) { PASS(); }
@@ -82,6 +93,46 @@ void TotemTest_equal_float(float expected, float actual, const char *expression,
     printf("Error: Expected %f but %f received.\n", expected, actual);
     FAIL();
 }
+void TotemTest_equal_array8(int32_t expected, uint8_t *array, uint32_t size, const char *expression, uint32_t line) {
+    int i;
+    for (i=0; i<size; i++) {
+        if (expected == array[i]) { PASS(); }
+    }
+    print_file(line);
+    print_expression(expression);
+    printf("Error: Array [");
+    print_array(array, size);
+    printf("] not equal to %" PRId32 " (0x%" PRIX32 ").\n", expected, (uint32_t)expected);
+    FAIL();
+}
+void TotemTest_equal_array32(int32_t expected, int32_t *array, uint32_t size, const char *expression, uint32_t line) {
+    int i;
+    for (i=0; i<size; i++) {
+        if (expected == array[i]) { PASS(); }
+    }
+    print_file(line);
+    print_expression(expression);
+    printf("Error: Array [");
+    print_array32(array, size);
+    printf("] not equal to %" PRId32 " (0x%" PRIX32 ").\n", expected, (uint32_t)expected);
+    FAIL();
+}
+void TotemTest_equal_arrays(uint8_t *array1, uint8_t *array2, uint32_t size, const char *expression, uint32_t line) {
+    int32_t i;
+    bool is_failed = false;
+    for (i=0; i<size; i++) {
+        if (array1[i] != array2[i]) { is_failed = true; break; }
+    }
+    if (is_failed) {
+        print_file(line);
+        print_expression(expression);
+        printf("Array1:"); print_array(array1, size); printf("\n");
+        printf("Array2:"); print_array(array2, size); printf("\n");
+        printf("Error: Array items mismatch at [%" PRId32 "] 0x%" PRIu8 " != 0x%" PRIu8 "\n", i, array1[i], array2[i]);
+        FAIL();
+    }
+    else { PASS(); }
+}
 void TotemTest_not_equal(int32_t not_expected, int32_t actual, const char *expression, uint32_t line) {
     if (not_expected != actual) { PASS(); }
     print_file(line);
@@ -109,20 +160,7 @@ void TotemTest_string(const char *expression, uint32_t line, const char *str1, c
     printf("Error: Expected \"%s\" to be equal \"%s\"\n", str1, buffer);
     FAIL();
 }
-void TotemTest_array(int32_t *array, uint32_t size, int32_t actual, const char *expression, uint32_t line) {
-    int i;
-    for (i=0; i<size; i++) {
-        if (array[i] == actual) { PASS(); }
-    }
-    print_file(line);
-    print_expression(expression);
-    printf("Error: Expected value in list [ ");
-    for (i=0; i<size; i++) {
-        printf("%" PRId32 " ", array[i]);
-    }
-    printf("] but %" PRId32 " (0x%" PRIX32 ") received.\n", actual, (uint32_t)actual);
-    FAIL();
-}
+
 void TotemTest_time(uint32_t expected, uint32_t actual, const char *expression, uint32_t line) {
     if (expected >= actual) { PASS(); }
     print_file(line);
