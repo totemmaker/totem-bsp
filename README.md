@@ -1,169 +1,73 @@
 # Totem Board Support Package
 
-Components for using Totem boards with ESP-IDF framework.  
-Contains C and C++ interface to control specific board features.  
-Allows to develop a standalone project or integrate into existing applications.
+Dependencies and low-level C drivers, required for RoboBoard programming using ESP-IDF framework.
+
+Check setup guide at: [https://docs.totemmaker.net/setup/](https://docs.totemmaker.net/setup/)
 
 ## Supported boards
-| Board name | SoC | Features | Photo |
-| --- | --- | --- | --- |
-| [RoboBoard X4](roboboard_x4) | ESP32 | Motor, Servo, GPIO, RGB, MEMS, TBUS, Qwiic, 12V | <a href="https://totemmaker.net/product/roboboard-x4-power-adapter-battery/"><img src="https://docs.totemmaker.net/assets/images/photo/roboboard-x4-v1.1-photo.jpg" width="150"></a> |
+| Board name | SoC | Revision | Features | Photo |
+| --- | --- | :-: | --- | --- |
+| [RoboBoard X3](https://docs.totemmaker.net/roboboard-x3/) | ESP32 | v.3.0 | 4 Motor, 2 Servo<br>3 IO, RGB, IMU, Qwiic<br> 3.7V battery | <img src="https://docs.totemmaker.net/assets/images/photo/roboboard-x3-v3.0-card.jpg" width="150"> |
+| [RoboBoard X4](https://docs.totemmaker.net/roboboard-x4/) | ESP32 | v.1.0<br>v.1.1 | 4 Motor, 3 Servo<br>4 IO, RGB, IMU, Qwiic, CAN<br> 11.1V battery | <a href="https://totemmaker.net/product/roboboard-x4-power-adapter-battery/"><img src="https://docs.totemmaker.net/assets/images/photo/roboboard-x4-v1.1-photo.jpg" width="150"></a> |
 
-### Supported IDF versions
+### Supported ESP-IDF versions
 
-* v4.4
-* v5.0
+* ESP-IDF v4.4
+* ESP-IDF v5.0
+* ESP-IDF v5.1
+* ESP-IDF v5.2
 
 ## How to use
 
-Read [Getting started](https://docs.espressif.com/projects/esp-idf/en/latest/esp32/get-started/index.html) to setup Espressif toolchain.
+Install Espressif toolchain: [Getting started](https://docs.espressif.com/projects/esp-idf/en/latest/esp32/get-started/index.html)
 
-This package is intended for use with a [IDF Component Manager](https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-guides/tools/idf-component-manager.html), a tool to automatically download specified dependencies. It works by adding configuration file with a list of components required. Build system will check if this file is present and attempts to download listed components.  
-Manifest file `idf_component.yml` can be created using command:  
+1. Create new ESP-IDF project or use command:  
+`idf.py create-project roboboard_project`
+1. Inside project create manifest file `main/idf_component.yml` or use command:  
 `idf.py create-manifest`  
-
-To add RoboBoard X4 component into ESP-IDF project:  
-Include `roboboard_x4` into `dependencies`  
+1. Add `roboboard_x3` or `roboboard_x4` as dependency:  
 ```yml
 ## IDF Component Manager Manifest File
 dependencies:
-  ## Required IDF version
-  idf:
-    version: ">=4.4.0"
-  # # Put list of dependencies here
-  # # For components maintained by Espressif:
-  # component: "~1.0.0"
-  # # For 3rd party components:
-  totemmaker/bsp:
+  # Include roboboard_x3 or roboboard_x4
+  roboboard_x4:
     path: roboboard_x4
-    git: https://github.com/totemmaker/totem-bsp
-  # username/component: ">=1.0.0,<2.0.0"
-  # username2/component2:
-  #   version: "~1.0.0"
-  #   # For transient dependencies `public` flag can be set.
-  #   # `public` flag doesn't have an effect dependencies of the `main` component.
-  #   # All dependencies of `main` are public by default.
-  #   public: true
+    git: https://github.com/totemmaker/totem-bsp.git
 ```
-_Or simply create `main/idf_component.yml` file with content above._
-
-Include header into project `main.c` file:  
-```C
-#include "bsp/roboboard_x4.h" // Board control functions
+4. Include header into project `roboboard_project.c` file:  
+```c
+#include "bsp/totem-bsp.h"
 
 void app_main(void)
 {
-    bsp_board_init(); // Must be called to initialize board
+    // Initialize board
+    bsp_board_init();
+    // Spin motor A at 100% power
+    bsp_cmd_write(BSP_DC_POWER, BSP_PORT_A, 100);
+    // Spin servo A to 500us pulse
+    bsp_cmd_write(BSP_SERVO_PULSE, BSP_PORT_A, 500);
+    // RoboBoard X4 LED on
+    // bsp_cmd_write(BSP_LED_STATE, 0, 1);
+    // bsp_cmd_write(BSP_RGB_COLOR, BSP_PORT_ALL, 0xFF00FF00);
 }
 ```
-
-## Step-by-step guide
-
-* Create project directory  
-`idf.py create-project test_project`  
-* Change directory  
-`cd test_project`
-* Create manifest file  
-`idf.py create-manifest`  
-* Add dependency to `main/idf_component.yml`  
-```yml
-dependencies:
-  totemmaker/bsp:
-    path: roboboard_x4
-    git: https://github.com/totemmaker/totem-bsp
-```   
-* Include header to `main/test_project.c` and call `bsp_board_init()`  
-```C
-#include "bsp/roboboard_x4.h"
-```
-* Build project  
+5. Build project:  
 `idf.py build`
 
 ## Documentation
 
 Information for function usage and board features:
 
-* For C read [roboboard_x4.h](https://github.com/totemmaker/totem-bsp/blob/master/roboboard_x4/include/bsp/roboboard_x4.h) header file
-* For C++ read [roboboard_x4.hpp](https://github.com/totemmaker/totem-bsp/blob/master/roboboard_x4/include/bsp/roboboard_x4.hpp) header file or website [https://docs.totemmaker.net/roboboard-x4/](https://docs.totemmaker.net/roboboard-x4/)
+* RoboBoard X3
+  * [roboboard_x3.h](https://github.com/totemmaker/totem-bsp/blob/master/roboboard_x3/include/bsp/roboboard_x3.h)
+  * [imu.h](https://github.com/totemmaker/totem-bsp/blob/master/roboboard_x3/include/bsp/imu.h)
+  * [rgb.h](https://github.com/totemmaker/totem-bsp/blob/master/roboboard_x3/include/bsp/rgb.h)
+* RoboBoard X4
+  * [roboboard_x4.h](https://github.com/totemmaker/totem-bsp/blob/master/roboboard_x4/include/bsp/roboboard_x4.h)
+  * [imu.h](https://github.com/totemmaker/totem-bsp/blob/master/roboboard_x4/include/bsp/imu.h)
+  * [can.h](https://github.com/totemmaker/totem-bsp/blob/master/roboboard_x4/include/bsp/can.h)
 
-## Run C example project
-
-Use low level functions `bsp_cmd_write` and `bsp_cmd_read` to control board features.
-
-* Clone totem-bsp repository  
-`git clone https://github.com/totemmaker/totem-bsp/`  
-* Change directory into example project  
-`cd totem-bsp/examples/roboboard_x4_led_blink`  
-* Build and flash project
-`idf.py build flash`  
-
-_Minimum example code:_
-```cpp
-#include "bsp/roboboard_x4.h"
-void app_main(void)
-{
-    // Initialize board components
-    bsp_board_init();
-    // Turn LED on
-    bsp_cmd_write(BSP_LED_STATE, 0, 1);
-    // Write servo port A to output 500us pulse
-    bsp_cmd_write(BSP_SERVO_PULSE, BSP_PORT_A, 500);
-}
-```
-
-## Run C++ example project
-
-Use high level C++ API to control components. Contains extensive and user friendly interface.  
-Low level functions can be used concurrently if `roboboard_x4.h` header is included.
-
-* Clone totem-bsp repository  
-`git clone https://github.com/totemmaker/totem-bsp/`  
-* Change directory into example project  
-`cd totem-bsp/examples/roboboard_x4_led_blink_cpp`  
-* Build and flash project
-`idf.py build flash`  
-
-_Minimum example code:_
-```cpp
-#include "bsp/roboboard_x4.hpp"
-extern "C" void app_main(void)
-{
-    // Initialize board components
-    X4.begin();
-    // Turn LED on
-    X4.led.on();
-    // Write servo port A to output 500us pulse
-    X4.servoA.pulse(500);
-}
-```
-
-## Using both C and C++
-
-Example project: `cd totem-bsp/examples/roboboard_x4_led_blink_mix`
-```cpp
-#include "bsp/roboboard_x4.h"
-#include "bsp/roboboard_x4.hpp"
-extern "C" void app_main(void)
-{
-    // Initialize board components
-    X4.begin();
-    // Turn LED on
-    X4.led.on();
-    // Write servo port A to output 500us pulse
-    X4.servoA.pulse(500);
-    // Write DC port A to 80% power
-    bsp_cmd_write(BSP_DC_POWER, BSP_PORT_A, 80);
-}
-```
-
-## Structure
-
-* `examples` - Examples of using package with ESP-IDF
-* `roboboard_x4` - RoboBoard X4 BSP package
-* `test` - Unit tests
-* `LICENSE` - License
-* `README.md` - This file
-
+Example code located in [examples](https://github.com/totemmaker/totem-bsp/tree/master/examples).
 
 ## Contacts
 
