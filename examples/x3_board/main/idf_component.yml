@@ -1,0 +1,6 @@
+## IDF Component Manager Manifest File
+description: RoboBoard X3 example
+dependencies:
+  roboboard_x3:
+    version: "*"
+    path: '../../../roboboard_x3'
