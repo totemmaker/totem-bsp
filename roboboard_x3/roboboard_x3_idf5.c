@@ -5,6 +5,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
+#include "esp_idf_version.h"
+#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0)
 #include "esp_adc/adc_oneshot.h"
 #include "esp_adc/adc_cali.h"
 #include "esp_adc/adc_cali_scheme.h"
@@ -57,3 +59,4 @@ uint32_t bsp_adc1_raw_to_voltage(uint32_t adc) {
     adc_cali_raw_to_voltage(adc1_cali_handle, adc, &voltage);
     return voltage;
 }
+#endif

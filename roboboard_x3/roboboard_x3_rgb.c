@@ -5,6 +5,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
+#ifndef TOTEMMAKER_PLATFORM
 #include "led_strip.h"
 #include "include/bsp/rgb.h"
 
@@ -77,3 +78,4 @@ esp_err_t bsp_rgb_clear() {
 esp_err_t bsp_rgb_update() {
     return led_strip_refresh(led_strip);
 }
+#endif
