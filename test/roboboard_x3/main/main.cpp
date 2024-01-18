@@ -167,12 +167,16 @@ void run_hardware_test() {
     TEST_PRINT("--- Test Servo ---");
     TEST_PRINT("Spin A to 500"); wait_button();
     bsp_cmd_write(BSP_SERVO_PULSE, BSP_PORT_A, 500);
-    TEST_PRINT("Spin A to 1500"); wait_button();
-    bsp_cmd_write(BSP_SERVO_PULSE, BSP_PORT_A, 1500);
-    TEST_PRINT("Spin B to 500"); wait_button();
-    bsp_cmd_write(BSP_SERVO_PULSE, BSP_PORT_B, 500);
-    TEST_PRINT("Spin B to 1500"); wait_button();
-    bsp_cmd_write(BSP_SERVO_PULSE, BSP_PORT_B, 1500);
+    TEST_PRINT("Spin A to 800"); wait_button();
+    bsp_cmd_write(BSP_SERVO_PULSE, BSP_PORT_A, 800);
+    TEST_PRINT("Spin B to 1000"); wait_button();
+    bsp_cmd_write(BSP_SERVO_PULSE, BSP_PORT_B, 1000);
+    if (bsp_cmd_read(BSP_BOARD_REVISION, 0) >= 31) {
+        TEST_PRINT("Spin C to 1200"); wait_button();
+        bsp_cmd_write(BSP_SERVO_PULSE, BSP_PORT_C, 1200);
+        TEST_PRINT("Spin D to 1400"); wait_button();
+        bsp_cmd_write(BSP_SERVO_PULSE, BSP_PORT_D, 1400);
+    }
     TEST_PRINT("Spin All to 500"); wait_button();
     bsp_cmd_write(BSP_SERVO_PULSE, BSP_PORT_ALL, 500);
     TEST_PRINT("Spin All to 1500"); wait_button();
@@ -185,9 +189,11 @@ void run_hardware_test() {
     TEST_PRINT("Disable A and Spin All to 1500"); wait_button();
     bsp_cmd_write(BSP_SERVO_CONFIG_ENABLE, BSP_PORT_A, 0);
     bsp_cmd_write(BSP_SERVO_PULSE, BSP_PORT_ALL, 1500);
-    TEST_PRINT("Disable B and Spin All to 500"); wait_button();
-    bsp_cmd_write(BSP_SERVO_CONFIG_ENABLE, BSP_PORT_B, 0);
-    bsp_cmd_write(BSP_SERVO_PULSE, BSP_PORT_ALL, 500);
+    if (bsp_cmd_read(BSP_BOARD_REVISION, 0) >= 31) {
+        TEST_PRINT("Disable C and Spin All to 500"); wait_button();
+        bsp_cmd_write(BSP_SERVO_CONFIG_ENABLE, BSP_PORT_C, 0);
+        bsp_cmd_write(BSP_SERVO_PULSE, BSP_PORT_ALL, 500);
+    }
     TEST_PRINT("--- Test end ---");
 }
 

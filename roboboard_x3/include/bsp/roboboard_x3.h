@@ -38,11 +38,14 @@
 /* Servo motor */
 #define BSP_IO_SERVOA_IN         (GPIO_NUM_25)
 #define BSP_IO_SERVOB_IN         (GPIO_NUM_14) // MTMS
+#define BSP_IO_SERVOC_IN         (GPIO_NUM_16)
+#define BSP_IO_SERVOD_IN         (GPIO_NUM_17)
 
 /* Others */
 #define BSP_IO_BUTTON            (GPIO_NUM_0)
 #define BSP_IO_RGB               (GPIO_NUM_13) // MTCK
 #define BSP_IO_3V3_EN            (GPIO_NUM_27)
+#define BSP_IO_VERSION_DETECT    (GPIO_NUM_34) // VDET_1
 #define BSP_IO_BATTERY_CHARGE    (GPIO_NUM_35) // VDET_2
 #define BSP_IO_BATTERY_CURRENT   (GPIO_NUM_36) // SENSOR_VP
 #define BSP_IO_BATTERY_VOLTAGE   (GPIO_NUM_37) // SENSOR_CAPP

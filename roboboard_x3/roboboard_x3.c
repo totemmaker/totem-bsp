@@ -22,13 +22,14 @@
 #define GPIO_SEL(pin)   ((uint64_t)(((uint64_t)1)<<(pin)))
 // Amount of peripheral ports available
 #define DC_CNT 4
-#define SERVO_CNT 2
 // IDF version dependent ADC setup functions
 void bsp_adc1_init(adc_channel_t channel);
 uint32_t bsp_adc1_get_raw(adc_channel_t channel);
 uint32_t bsp_adc1_raw_to_voltage(uint32_t adc);
 // Runtime states
 static bool bsp_initialized = false;
+static uint8_t bsp_board_revision = 0;
+static uint8_t bsp_servo_cnt = 2;
 // MCPWM states
 enum {
     MCPWM_DECAY_UNDEFINED,
@@ -58,11 +59,14 @@ static struct MCPWMOutput {
     {MCPWM_UNIT_1, MCPWM_TIMER_0, 20000, MCPWM_DECAY_SLOW, MCPWM_MODE_POWER, 0, 0},
 };
 static struct MCPWMServo {
+    const mcpwm_timer_t tim;
     const mcpwm_generator_t gen;
     uint32_t period;
-} mcpwm_servo[SERVO_CNT] = { // Default Servo motors configuration
-    {MCPWM_GEN_A, 20000},
-    {MCPWM_GEN_B, 20000},
+} mcpwm_servo[4] = { // Default Servo motors configuration
+    {MCPWM_TIMER_1, MCPWM_GEN_A, 20000},
+    {MCPWM_TIMER_1, MCPWM_GEN_B, 20000},
+    {MCPWM_TIMER_2, MCPWM_GEN_A, 20000},
+    {MCPWM_TIMER_2, MCPWM_GEN_B, 20000},
 };
 // MCPWM initialization
 static void mcpwm_initialize() {
@@ -77,6 +81,8 @@ static void mcpwm_initialize() {
     mcpwm_gpio_init(MCPWM_UNIT_1, MCPWM0B, BSP_IO_MOTORD_INB);
     mcpwm_gpio_init(MCPWM_UNIT_1, MCPWM1A, BSP_IO_SERVOA_IN);
     mcpwm_gpio_init(MCPWM_UNIT_1, MCPWM1B, BSP_IO_SERVOB_IN);
+    mcpwm_gpio_init(MCPWM_UNIT_1, MCPWM2A, BSP_IO_SERVOC_IN);
+    mcpwm_gpio_init(MCPWM_UNIT_1, MCPWM2B, BSP_IO_SERVOD_IN);
     // Configure MCPWM units
     mcpwm_config_t pwm_config;
     pwm_config.frequency = 20000; // 20kHz for DC
@@ -90,6 +96,7 @@ static void mcpwm_initialize() {
     mcpwm_init(MCPWM_UNIT_1, MCPWM_TIMER_0, &pwm_config);
     pwm_config.frequency = 50;   // 50Hz for servo
     mcpwm_init(MCPWM_UNIT_1, MCPWM_TIMER_1, &pwm_config);
+    mcpwm_init(MCPWM_UNIT_1, MCPWM_TIMER_2, &pwm_config);
 }
 // MCPWM reconfigure
 static esp_err_t mcpwm_configure(struct MCPWMOutput *mcpwm, uint32_t frequency, uint32_t mode, int32_t value) {
@@ -156,6 +163,16 @@ esp_err_t bsp_board_init(void) {
     // Initialize battery analog read
     bsp_adc1_init(ADC_CHANNEL_0); // (BSP_IO_BATTERY_CURRENT) GPIO36 (SENSOR_VP) of ADC1
     bsp_adc1_init(ADC_CHANNEL_1); // (BSP_IO_BATTERY_VOLTAGE) GPIO37 (SENSOR_CAPP) of ADC1
+    bsp_adc1_init(ADC_CHANNEL_6); // (BSP_IO_VERSION_DETECT) GPIO34 (VDET_1) of ADC1
+    // Read board revision
+    int verAdc = bsp_adc1_get_raw(ADC_CHANNEL_6);
+    int verVolt = bsp_adc1_raw_to_voltage(verAdc);
+    if (verVolt < 300) bsp_board_revision = 30;
+    else if (verVolt > 3000) bsp_board_revision = 30;
+    else if (verVolt < 700) {
+        bsp_board_revision = 31;
+        bsp_servo_cnt = 4;
+    }
     // Return initialization state
     bsp_initialized = true;
     return ESP_OK;
@@ -228,26 +245,34 @@ static int bsp_dc_cmd_write(bsp_cmd_t cmd, uint8_t port, int32_t value) {
 }
 // Handler for "servo" commands write
 static int bsp_servo_cmd_write(bsp_cmd_t cmd, uint8_t port, uint32_t value) {
-    if (port >= SERVO_CNT) { return ESP_ERR_INVALID_ARG; }
+    if (port >= bsp_servo_cnt) { return ESP_ERR_INVALID_ARG; }
     // Handle commands
     switch (cmd) {
     case BSP_SERVO_PULSE: {
         // Limit to [0:period]
         if (value > mcpwm_servo[port].period) return ESP_ERR_INVALID_SIZE;
         // Configure spin position
-        return mcpwm_set_duty_in_us(MCPWM_UNIT_1, MCPWM_TIMER_1, mcpwm_servo[port].gen, value);
+        return mcpwm_set_duty_in_us(MCPWM_UNIT_1, mcpwm_servo[port].tim, mcpwm_servo[port].gen, value);
     }
     case BSP_SERVO_CONFIG_PERIOD: {
         // Limit to [1:1000000]
         if (value < 1 || value > 1000000) return ESP_ERR_INVALID_SIZE;
-        mcpwm_servo[port].period = value;
         // Configure ports A and B PWM period (us)
-        return mcpwm_set_frequency(MCPWM_UNIT_1, MCPWM_TIMER_1, 1000000/value);
+        if (port < 2) {
+            mcpwm_servo[0].period = value;
+            mcpwm_servo[1].period = value;
+            return mcpwm_set_frequency(MCPWM_UNIT_1, MCPWM_TIMER_1, 1000000/value);
+        }
+        else {
+            mcpwm_servo[2].period = value;
+            mcpwm_servo[3].period = value;
+            return mcpwm_set_frequency(MCPWM_UNIT_1, MCPWM_TIMER_2, 1000000/value);
+        }
     }
     case BSP_SERVO_CONFIG_ENABLE: {
         // enable / disable port
-        if (value) return mcpwm_start(MCPWM_UNIT_1, MCPWM_TIMER_1);
-        else return mcpwm_stop(MCPWM_UNIT_1, MCPWM_TIMER_1);
+        if (value) return mcpwm_start(MCPWM_UNIT_1, mcpwm_servo[port].tim);
+        else return mcpwm_stop(MCPWM_UNIT_1, mcpwm_servo[port].tim);
     }
     default: return ESP_ERR_NOT_FOUND;
     };
@@ -265,7 +290,7 @@ esp_err_t bsp_cmd_write(bsp_cmd_t cmd, int8_t port, int32_t value) {
     }
     else if (cmd >= BSP_SERVO_PULSE) { // Call Servo command handler
         if (port == -1) { // Apply to all Servo ports
-            for (int i=0; i<SERVO_CNT; i++) {
+            for (int i=0; i<bsp_servo_cnt; i++) {
                 err = bsp_servo_cmd_write(cmd, i, value);
                 if (err) return err;
             }
@@ -295,7 +320,7 @@ int32_t bsp_cmd_read(bsp_cmd_t cmd, uint8_t port) {
     if (!bsp_initialized) { return 0; }
     // Handle read supported commands
     switch (cmd) {
-    case BSP_BOARD_REVISION: { return 30; }
+    case BSP_BOARD_REVISION: { return bsp_board_revision; }
     case BSP_BUTTON_STATE: { return gpio_get_level(BSP_IO_BUTTON) == 0; }
     case BSP_USB_STATE: { return gpio_get_level(BSP_IO_USB_DETECT) != 0; }
     case BSP_BATTERY_VOLTAGE: {
@@ -331,7 +356,7 @@ int32_t bsp_cmd_read(bsp_cmd_t cmd, uint8_t port) {
         return mcpwm_dc[port].decay == MCPWM_DECAY_SLOW ? 0 : 1;
     }
     case BSP_SERVO_CONFIG_PERIOD: {
-        if (port >= SERVO_CNT) return 0;
+        if (port >= bsp_servo_cnt) return 0;
         return mcpwm_servo[port].period;
     }
     }

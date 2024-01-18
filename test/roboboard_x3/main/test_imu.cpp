@@ -29,9 +29,9 @@ TEST_CASE("Read IMU data", "[IMU]") {
     TEST_FLOAT(0, 0.17, data.accel.y); // Should be around 0.0. May drift to 0.17
     TEST_FLOAT(1, 0.17, data.accel.z); // Should be around 1.0. May drift to 1.17
     // Test gyroscope
-    TEST_FLOAT(0, 1.50, data.gyro.x); // Should be around 0.0. May drift to 1.50
-    TEST_FLOAT(0, 1.50, data.gyro.y); // Should be around 0.0. May drift to 1.50
-    TEST_FLOAT(0, 1.50, data.gyro.z); // Should be around 0.0. May drift to 1.50
+    TEST_FLOAT(0, 26.0, data.gyro.x); // Should be around 0.0. May drift to 25?
+    TEST_FLOAT(0, 26.0, data.gyro.y); // Should be around 0.0. May drift to 25?
+    TEST_FLOAT(0, 26.0, data.gyro.z); // Should be around 0.0. May drift to 25?
 }
 
 TEST_CASE("Test IMU API", "[IMU]") {

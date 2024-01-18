@@ -14,7 +14,7 @@ TEST_CASE("Test Board API", "[Board]") {
     // Should accept any port
     int revision = bsp_cmd_read(BSP_BOARD_REVISION, 55);
     // Check read results are valid
-    TEST_VALUES(revision, 30);
+    TEST_VALUES(revision, 30, 31);
     TEST_VALUES(0, 1, bsp_cmd_read(BSP_BUTTON_STATE, 0));
     TEST_EQUAL(1, bsp_cmd_read(BSP_USB_STATE, 0));
     // Voltage should read ~4.9V when USB is plugged in
@@ -33,9 +33,17 @@ TEST_CASE("Test Board API", "[Board]") {
     TEST_EQUAL(0, bsp_cmd_read(BSP_DC_CONFIG_DECAY, 3));
     TEST_EQUAL(20000, bsp_cmd_read(BSP_SERVO_CONFIG_PERIOD, 0));
     TEST_EQUAL(20000, bsp_cmd_read(BSP_SERVO_CONFIG_PERIOD, 1));
+    if (revision > 30) {
+        TEST_EQUAL(20000, bsp_cmd_read(BSP_SERVO_CONFIG_PERIOD, 2));
+        TEST_EQUAL(20000, bsp_cmd_read(BSP_SERVO_CONFIG_PERIOD, 3));
+    }
+    else {
+        TEST_EQUAL(0, bsp_cmd_read(BSP_SERVO_CONFIG_PERIOD, 2));
+        TEST_EQUAL(0, bsp_cmd_read(BSP_SERVO_CONFIG_PERIOD, 3));
+    }
     // Test port validation
     TEST_EQUAL(0, bsp_cmd_read(BSP_DC_CONFIG_FREQUENCY, 4));
-    TEST_EQUAL(0, bsp_cmd_read(BSP_SERVO_CONFIG_PERIOD, 2));
+    TEST_EQUAL(0, bsp_cmd_read(BSP_SERVO_CONFIG_PERIOD, 4));
     // Check if write is not allowed for unsupported commands
     uint8_t read_only[] = {
         BSP_BOARD_REVISION,
@@ -76,7 +84,10 @@ TEST_CASE("Test Board API", "[Board]") {
     TEST_ERROR(ESP_ERR_INVALID_SIZE, bsp_cmd_write(BSP_SERVO_CONFIG_PERIOD, 0, 1000000+1));
     // Test port validation
     TEST_ERROR(ESP_ERR_INVALID_ARG, bsp_cmd_write(BSP_DC_POWER, 4, 0));
-    TEST_ERROR(ESP_ERR_INVALID_ARG, bsp_cmd_write(BSP_SERVO_PULSE, 2, 0));
+    if (revision == 30)
+        TEST_ERROR(ESP_ERR_INVALID_ARG, bsp_cmd_write(BSP_SERVO_PULSE, 2, 0));
+    else
+        TEST_ERROR(ESP_ERR_INVALID_ARG, bsp_cmd_write(BSP_SERVO_PULSE, 4, 0));
     // Test cmd validation
     TEST_ERROR(ESP_ERR_NOT_FOUND, bsp_cmd_write(BSP_CMD_MAX, 0, 0));
 }
