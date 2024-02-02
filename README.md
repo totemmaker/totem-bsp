@@ -7,7 +7,7 @@ Check setup guide at: [https://docs.totemmaker.net/setup/](https://docs.totemmak
 ## Supported boards
 | Board name | SoC | Revision | Features | Photo |
 | --- | --- | :-: | --- | --- |
-| [RoboBoard X3](https://docs.totemmaker.net/roboboard-x3/) | ESP32 | v.3.0 | 4 Motor, 2 Servo<br>3 IO, RGB, IMU, Qwiic<br> 3.7V battery | <img src="https://docs.totemmaker.net/assets/images/photo/roboboard-x3-v3.0-card.jpg" width="150"> |
+| [RoboBoard X3](https://docs.totemmaker.net/roboboard-x3/) | ESP32 | v.3.0<br>v.3.1 | 4 Motor, 4 Servo<br>3 IO, RGB, IMU, Qwiic<br> 3.7V battery | <a href="https://totemmaker.net/product/roboboard-x3-programmable-robot-development-board/"><img src="https://docs.totemmaker.net/assets/images/photo/roboboard-x3-v3.1-card.jpg" width="150"></a> |
 | [RoboBoard X4](https://docs.totemmaker.net/roboboard-x4/) | ESP32 | v.1.0<br>v.1.1 | 4 Motor, 3 Servo<br>4 IO, RGB, IMU, Qwiic, CAN<br> 11.1V battery | <a href="https://totemmaker.net/product/roboboard-x4-power-adapter-battery/"><img src="https://docs.totemmaker.net/assets/images/photo/roboboard-x4-v1.1-photo.jpg" width="150"></a> |
 
 ### Supported ESP-IDF versions

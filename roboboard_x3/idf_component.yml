@@ -1,4 +1,4 @@
-version: "2.0.0"
+version: "2.1.0"
 description: Board Support Package for Totem RoboBoard X3
 url: https://github.com/totemmaker/totem-bsp/tree/master/roboboard_x3
 # documentation: https://docs.totemmaker.net/roboboard-x3/
