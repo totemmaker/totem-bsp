@@ -8,16 +8,13 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
-#include "esp_timer.h"
-#include "esp_mac.h"
-
 #include "driver/gpio.h"
 #include "hal/adc_types.h"
 
 #include "bsp/roboboard_x4.h"
 #include "lib/periph_driver.h"
 // Macros to return peripheral port command and GPIO pin setup
-#define RegPort(cmd, port) (cmd + ((port+1)*0x10))
+#define RegPort(cmd, port) (cmd + (((port+1)&0xF)*0x10))
 #define GPIO_SEL(pin)   ((uint64_t)(((uint64_t)1)<<(pin)))
 // Amount of peripheral ports available
 #define DC_CNT 4
@@ -29,8 +26,22 @@ uint32_t bsp_adc1_get_raw();
 uint32_t bsp_adc1_raw_to_voltage(uint32_t adc);
 // Runtime states
 static bool bsp_initialized = false;
+static bool bsp_isV15x = false;
+static uint32_t bsp_dc_frequency[2] = { 20000, 20000 };
+static uint32_t bsp_dc_decay[DC_CNT];
 static uint32_t bsp_servo_period = 20000;
-static uint32_t bsp_dc_frequency[2] = { 50, 50 };
+static uint32_t bsp_servo_pulse[SERVO_CNT];
+static struct { bsp_interrupt_func_t func; void *arg; } bsp_servo_isr;
+// Peripheral update handler
+static void bsp_on_periph_update(PeriphRegMap reg, uint32_t value) {
+    // Servo motor position update
+    if ((reg & PERIPH_SERVO_X_GET_PULSE) == PERIPH_SERVO_X_GET_PULSE) {
+        uint32_t port = PeriphRegMap_channel(reg);
+        if (port >= SERVO_CNT) return;
+        bsp_servo_pulse[port] = value;
+        if (bsp_servo_isr.func) bsp_servo_isr.func(bsp_servo_isr.arg);
+    }
+}
 // Board initialization function
 esp_err_t bsp_board_init(void) {
     esp_err_t err = ESP_FAIL;
@@ -51,9 +62,19 @@ esp_err_t bsp_board_init(void) {
     // Initialize battery analog read
     bsp_adc1_init(ADC_CHANNEL_0); // (BSP_IO_BATTERY_VOLTAGE) GPIO36 (SENSOR_VP) of ADC1
     // Establish connection to peripheral driver
-    err = periph_driver_init();
+    err = periph_driver_init(bsp_on_periph_update);
     // Return initialization state
-    if (err == ESP_OK) bsp_initialized = true;;
+    if (err == ESP_OK) bsp_initialized = true;
+    // Load default configuration values
+    if (bsp_driver_version < 160) {
+        // Older driver version defaults to 50Hz, fast decay
+        for (int i=0; i<2; i++) { bsp_dc_frequency[i] = 50; }
+        for (int i=0; i<DC_CNT; i++) { bsp_dc_decay[i] = 1; }
+        bsp_isV15x = true;
+    }
+    else {
+        periph_driver_subscribe(PERIPH_SERVO_X_GET_PULSE);
+    }
     return err;
 }
 // Handler for "board" command write
@@ -71,6 +92,7 @@ static int bsp_board_cmd_write(bsp_cmd_t cmd, uint32_t value) {
 static int bsp_dc_cmd_write(bsp_cmd_t cmd, int8_t port, int32_t value) {
     PeriphRegMap reg;
     // Bugfix: DC power is not reset if tone is applied. Reset power manually before writing tone.
+    // TODO: Fixed in driver v1.60. Remove when old version support is dropped.
     static int8_t dc_power[DC_CNT] = {0};
     // Handle commands
     switch (cmd) {
@@ -106,19 +128,19 @@ static int bsp_dc_cmd_write(bsp_cmd_t cmd, int8_t port, int32_t value) {
         // Limit to [0:20000]
         if ((value & 0xFFFF) > 20000) return ESP_ERR_INVALID_SIZE;
         if (port == -1) { // Write tone to all ports
-            for (int i=0; i<DC_CNT; i++) { if (dc_power[i]) { bsp_dc_cmd_write(BSP_DC_POWER, -1, 0); break; }}
+            for (int i=0; i<DC_CNT; i++) { if (bsp_isV15x && dc_power[i]) { bsp_dc_cmd_write(BSP_DC_POWER, -1, 0); break; }}
             periph_driver_write(PERIPH_DC_SET_AB_TONE, value);
             periph_driver_write(PERIPH_DC_SET_CD_TONE, value);
             return ESP_OK;
         }
         else if (port < 2) { // Write tone to AB group
-            if (dc_power[0]) { bsp_dc_cmd_write(BSP_DC_POWER, 0, 0); }
-            if (dc_power[1]) { bsp_dc_cmd_write(BSP_DC_POWER, 1, 0); }
+            if (bsp_isV15x && dc_power[0]) { bsp_dc_cmd_write(BSP_DC_POWER, 0, 0); }
+            if (bsp_isV15x && dc_power[1]) { bsp_dc_cmd_write(BSP_DC_POWER, 1, 0); }
             reg = PERIPH_DC_SET_AB_TONE;
         }
         else { // Write tone to CD group
-            if (dc_power[2]) { bsp_dc_cmd_write(BSP_DC_POWER, 2, 0); }
-            if (dc_power[3]) { bsp_dc_cmd_write(BSP_DC_POWER, 3, 0); }
+            if (bsp_isV15x && dc_power[2]) { bsp_dc_cmd_write(BSP_DC_POWER, 2, 0); }
+            if (bsp_isV15x && dc_power[3]) { bsp_dc_cmd_write(BSP_DC_POWER, 3, 0); }
             reg = PERIPH_DC_SET_CD_TONE;
         }
         break;
@@ -136,6 +158,22 @@ static int bsp_dc_cmd_write(bsp_cmd_t cmd, int8_t port, int32_t value) {
         else { // Write frequency to AB or CD group
             reg = port < 2 ? PERIPH_DC_SET_AB_FREQUENCY : PERIPH_DC_SET_CD_FREQUENCY;
             bsp_dc_frequency[port < 2 ? 0 : 1] = value;
+        }
+        break;
+    }
+    case BSP_DC_CONFIG_DECAY: {
+        if (bsp_isV15x) return ESP_ERR_NOT_SUPPORTED;
+        // Limit to [0-slow, 1-fast]
+        if (value != 0 && value != 1) return ESP_ERR_INVALID_SIZE;
+        if (port == -1) { // Write decay to all ports
+            for (int i=0; i<DC_CNT; i++) { bsp_dc_decay[port] = value; }
+            reg = PERIPH_DC_SET_ABCD_DECAY;
+            value |= (((uint8_t)value)<<8)|(((uint8_t)value)<<16)|(((uint8_t)value)<<24);
+        }
+        else {
+            // Configure motor decay mode
+            reg = RegPort(PERIPH_DC_X_DECAY, port);
+            bsp_dc_decay[port] = value;
         }
         break;
     }
@@ -162,7 +200,8 @@ static int bsp_servo_cmd_write(bsp_cmd_t cmd, int8_t port, uint32_t value) {
     if (port >= SERVO_CNT) { return ESP_ERR_INVALID_ARG; }
     PeriphRegMap reg;
     // Bugfix: Workaround for mixed servo ports in older RoboBoard X4 v1.0 revision
-    if (bsp_board_revision == 10) {
+    // TODO: Fixed in driver v1.60. Remove when old version support is dropped
+    if (bsp_board_revision == 10 && bsp_isV15x) {
         if (port == 1) port = 2;
         else if (port == 2) port = 1;
     }
@@ -171,12 +210,17 @@ static int bsp_servo_cmd_write(bsp_cmd_t cmd, int8_t port, uint32_t value) {
     case BSP_SERVO_PULSE: {
         // Limit to [0:bsp_servo_period]
         if ((value & 0xFFFF) > bsp_servo_period) return ESP_ERR_INVALID_SIZE;
+        // PPP speed unit is not supported in old firmware
+        if (bsp_isV15x && value & 0x80000000) return ESP_ERR_NOT_SUPPORTED;
         // Write pulse (us) to all ports or single one
         reg = port == -1 ? PERIPH_SERVO_SET_ABC_PULSE : RegPort(PERIPH_SERVO_X_PULSE, port);
         periph_driver_write(reg, value);
         break;
     }
     case BSP_SERVO_CONFIG_SPEED: {
+        if (bsp_isV15x) {
+            return ESP_ERR_NOT_SUPPORTED; // Constant speed control is no more supported for old firmware
+        }
         if (port == -1) { // Write servo speed to all ports
             for (int i=0; i<SERVO_CNT; i++) {
                 periph_driver_write(RegPort(PERIPH_SERVO_X_SPEED, i), value);
@@ -195,9 +239,11 @@ static int bsp_servo_cmd_write(bsp_cmd_t cmd, int8_t port, uint32_t value) {
         // Write servo period (us) to all ports
         periph_driver_write(PERIPH_SERVO_SET_ABC_PERIOD, value);
         // Bugfix: ignore internal servo limit and inversion. Allow full range control
-        for (int i=0; i<SERVO_CNT; i++) {
-            periph_driver_write(RegPort(PERIPH_SERVO_X_PULSE_MIN, i), 0);
-            periph_driver_write(RegPort(PERIPH_SERVO_X_PULSE_MAX, i), value);
+        if (bsp_isV15x) {
+            for (int i=0; i<SERVO_CNT; i++) {
+                periph_driver_write(RegPort(PERIPH_SERVO_X_PULSE_MIN, i), 0);
+                periph_driver_write(RegPort(PERIPH_SERVO_X_PULSE_MAX, i), value);
+            }
         }
         break;
     }
@@ -217,6 +263,7 @@ static int bsp_servo_cmd_write(bsp_cmd_t cmd, int8_t port, uint32_t value) {
 // Handler for "rgb" commands write
 static int bsp_rgb_cmd_write(bsp_cmd_t cmd, int8_t port, uint32_t value) {
     // Workaround: hold states to mimic individual RGB enable control
+    // TODO: Fixed in driver v1.60. Remove when old version support is dropped
     static uint8_t rgb_en[RGB_CNT] = {1,1,1,1};
     static uint32_t rgb_last[RGB_CNT];
     static uint32_t rgb_fade[RGB_CNT];
@@ -256,15 +303,21 @@ static int bsp_rgb_cmd_write(bsp_cmd_t cmd, int8_t port, uint32_t value) {
         break;
     }
     case BSP_RGB_CONFIG_ENABLE: {
-        if (port == -1) { // Switch all LED
-            for (int i=0; i<RGB_CNT; i++) {
-                rgb_en[i] = value;
-                periph_driver_write(RegPort(PERIPH_RGB_X_SET, i), value ? rgb_last[i] : 0);
+        if (bsp_isV15x) {
+            if (port == -1) { // Switch all LED
+                for (int i=0; i<RGB_CNT; i++) {
+                    rgb_en[i] = value;
+                    periph_driver_write(RegPort(PERIPH_RGB_X_SET, i), value ? rgb_last[i] : 0);
+                }
+            }
+            else { // Switch single LED
+                rgb_en[port] = value;
+                periph_driver_write(RegPort(PERIPH_RGB_X_SET, port), value ? rgb_last[port] : 0);
             }
         }
-        else { // Switch single LED
-            rgb_en[port] = value;
-            periph_driver_write(RegPort(PERIPH_RGB_X_SET, port), value ? rgb_last[port] : 0);
+        else {
+            if (port == -1) { periph_driver_write(PERIPH_RGB_SET_ABCD_ENABLE, value ? 0x01010101 : 0); }
+            else { periph_driver_write(RegPort(PERIPH_RGB_X_ENABLE, port), value); }
         }
         break;
     }
@@ -326,6 +379,14 @@ int32_t bsp_cmd_read(bsp_cmd_t cmd, uint8_t port) {
         if (port >= DC_CNT) return 0;
         return bsp_dc_frequency[port < 2 ? 0 : 1];
     }
+    case BSP_DC_CONFIG_DECAY: {
+        if (port >= DC_CNT) return 0;
+        return bsp_dc_decay[port];
+    }
+    case BSP_SERVO_PULSE: {
+        if (port >= SERVO_CNT) return 0;
+        return bsp_servo_pulse[port];
+    }
     case BSP_SERVO_CONFIG_PERIOD: {
         if (port >= SERVO_CNT) return 0;
         return bsp_servo_period;
@@ -365,6 +426,11 @@ esp_err_t bsp_register_interrupt_callback(bsp_cmd_t cmd, bsp_interrupt_func_t fu
         gpio_isr_handler_add(BSP_IO_USB_DETECT, func, arg);
         break;
     }
+    case BSP_SERVO_PULSE: {
+        bsp_servo_isr.func = func;
+        bsp_servo_isr.arg = arg;
+        break;
+    }
     default: return ESP_ERR_NOT_SUPPORTED;
     }
     gpio_config(&pGPIOConfig);
@@ -374,8 +440,8 @@ esp_err_t bsp_register_interrupt_callback(bsp_cmd_t cmd, bsp_interrupt_func_t fu
 uint32_t bsp_gpio_digital_read(uint8_t port) {
     return periph_driver_read(RegPort(PERIPH_GPIO_X_DIGITAL_READ, port));
 }
-void bsp_gpio_digital_input(uint8_t port, uint8_t pull) {
-    periph_driver_write(RegPort(PERIPH_GPIO_X_PULL, port), pull);
+void bsp_gpio_mode(uint8_t port, uint8_t mode) {
+    periph_driver_write(RegPort(PERIPH_GPIO_X_MODE, port), mode);
 }
 void bsp_gpio_digital_write(uint8_t port, uint8_t state) {
     periph_driver_write(RegPort(PERIPH_GPIO_X_DIGITAL_WRITE, port), state);

@@ -61,7 +61,7 @@ enum {
     // Some commands has ports combined in a group. Writing to either of
     // port will affect both. E.g., write to A of group AB affects A and B.
     // Tags [read],[write] indicates if command should be used with bsp_cmd_read or bsp_cmd_write
-    // Tag [irq] indicated that command can be registered in bsp_register_interrupt_callback
+    // Tag [irq] indicate that command can be registered in bsp_register_interrupt_callback
 
     // [read] board revision [0:990] -> 9.9
     BSP_BOARD_REVISION,
@@ -88,20 +88,25 @@ enum {
     BSP_DC_POWER,
     // [write] braking power [0:100]%. 0:coast
     BSP_DC_BRAKE,
-    // [write] beep tone [0:20000]Hz. Duration [0:0xFFFF]ms (auto stop). ((duration << 16) | freq). Ports AB, CD are grouped together
+    // [write] beep tone [0:20000]Hz. Duration [0:0xFFFF]ms (auto stop).
+    // ((duration << 16) | freq). Ports AB, CD are grouped together
     BSP_DC_TONE,
     // [write|read] PWM [0:250000]Hz. Ports AB, CD are grouped together
     BSP_DC_CONFIG_FREQUENCY,
+    // [write|read] decay [0-slow, 1-fast]
+    BSP_DC_CONFIG_DECAY,
     // [write] motor port [0:1] off/on
     BSP_DC_CONFIG_ENABLE,
 
     // Servo motor ports control
 
-    // [write] spin to [0:period]us. Duration [0:0xFFFF]ms. ((duration << 16) | pulse). Overrides spin speed if "duration" is specified.
+    // [write|read|irq] spin to [0:period]us. Optional speed control:
+    // Duration [0:0x7FFF]ms. ((duration << 16) | pulse). Overrides BSP_SERVO_CONFIG_SPEED.
+    // PPP 0x8000 | [0:0x7FFF]. (0x8000 | (ppp << 16) | pulse). Overrides BSP_SERVO_CONFIG_SPEED.
     BSP_SERVO_PULSE,
-    // [write] servo speed. Format: (RPM * 60)
+    // [write] servo speed. PPP (Pulse-Per-Period) (amount of microseconds to move each period)
     BSP_SERVO_CONFIG_SPEED,
-    // [write|read] PWM [1:0xFFFF]us. Ports ABC are grouped together
+    // [write|read] PWM period [1:0xFFFF]us. Ports ABC are grouped together
     BSP_SERVO_CONFIG_PERIOD,
     // [write] motor port [0:1] off/on
     BSP_SERVO_CONFIG_ENABLE,
@@ -192,10 +197,10 @@ uint32_t bsp_gpio_digital_read(uint8_t port);
 /// @param state pin state: [0] - LOW, [1] - HIGH
 void bsp_gpio_digital_write(uint8_t port, uint8_t state);
 
-/// @brief Configure GPIO pin to input mode with pull resistor
+/// @brief Configure GPIO mode
 /// @param port pin number (A, B, C, D)
-/// @param pull enable [1] - pull-up, [0] - pull-down
-void bsp_gpio_digital_input(uint8_t port, uint8_t pull);
+/// @param mode 0-pd, 1-pu, 2-float, 3-out, 4-analog
+void bsp_gpio_mode(uint8_t port, uint8_t mode);
 
 /// @brief Read analog value of GPIO pin
 /// @param port pin number (A, B, C, D)
