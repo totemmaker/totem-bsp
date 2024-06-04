@@ -102,7 +102,8 @@ static int bsp_dc_cmd_write(bsp_cmd_t cmd, int8_t port, int32_t value) {
         if (port == -1) { // Write power to all ports
             reg = PERIPH_DC_SET_ABCD_POWER;
             for (int i=0; i<DC_CNT; i++) { dc_power[i] = value; }
-            value |= (((int8_t)value)<<8)|(((int8_t)value)<<16)|(((int8_t)value)<<24);
+            int8_t *valuePtr = (int8_t*)&value;
+            valuePtr[0]=valuePtr[1]=valuePtr[2]=valuePtr[3] = value;
         }
         else { // Write power to single port
             reg = RegPort(PERIPH_DC_X_POWER, port);
@@ -116,7 +117,8 @@ static int bsp_dc_cmd_write(bsp_cmd_t cmd, int8_t port, int32_t value) {
         if (port == -1) { // Write brake to all ports
             reg = PERIPH_DC_SET_ABCD_BRAKE;
             for (int i=0; i<DC_CNT; i++) { dc_power[i] = 0; }
-            value |= (((uint8_t)value)<<8)|(((uint8_t)value)<<16)|(((uint8_t)value)<<24);
+            uint8_t *valuePtr = (uint8_t*)&value;
+            valuePtr[0]=valuePtr[1]=valuePtr[2]=valuePtr[3] = value;
         }
         else { // Write brake to single port
             reg = RegPort(PERIPH_DC_X_BRAKE, port);
@@ -166,9 +168,10 @@ static int bsp_dc_cmd_write(bsp_cmd_t cmd, int8_t port, int32_t value) {
         // Limit to [0-slow, 1-fast]
         if (value != 0 && value != 1) return ESP_ERR_INVALID_SIZE;
         if (port == -1) { // Write decay to all ports
-            for (int i=0; i<DC_CNT; i++) { bsp_dc_decay[port] = value; }
+            for (int i=0; i<DC_CNT; i++) { bsp_dc_decay[i] = value; }
             reg = PERIPH_DC_SET_ABCD_DECAY;
-            value |= (((uint8_t)value)<<8)|(((uint8_t)value)<<16)|(((uint8_t)value)<<24);
+            uint8_t *valuePtr = (uint8_t*)&value;
+            valuePtr[0]=valuePtr[1]=valuePtr[2]=valuePtr[3] = value;
         }
         else {
             // Configure motor decay mode

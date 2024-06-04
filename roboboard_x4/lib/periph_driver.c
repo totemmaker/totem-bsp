@@ -284,7 +284,7 @@ uint32_t periph_driver_read(PeriphRegMap reg) {
     uint32_t result = 0;
     if (comm_mode_full_duplex) {
         // Request register read
-        uint8_t data[7]; int size;
+        uint8_t data[8]; int size;
         size = frameEncode(reg | 0x8000, 0, data);
         if (size == -1) return 0;
         // In full-duplex mode wait for response in receive task
