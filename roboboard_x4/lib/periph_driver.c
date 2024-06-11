@@ -52,7 +52,7 @@ static esp_err_t UART_init(uint32_t baud) {
         // Set pins
         uart_set_pin(UART_PORT_NUM, BSP_IO_DRIVER_UART_RX, BSP_IO_DRIVER_UART_TX, 0, 0);
         // Start driver
-        if (uart_driver_install(UART_PORT_NUM, UART_FIFO_LEN+1, 0, 0, NULL, 0) != ESP_OK)
+        if (uart_driver_install(UART_PORT_NUM, SOC_UART_FIFO_LEN+1, 0, 0, NULL, 0) != ESP_OK)
             return ESP_FAIL;
         initialized = 1;
     }
