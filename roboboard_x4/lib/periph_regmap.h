@@ -82,7 +82,7 @@ typedef enum {
     PERIPH_SERVO_MAX = PERIPH_SERVO_C,
     // Servo control commands
     PERIPH_SERVO_SET = PERIPH_SERVO + PERIPH_CONTROL_CHANNEL, // 0xA0
-    PERIPH_SERVO_SET_ABC_ENABLE, // Enable/Disable servo peripheral
+    PERIPH_SERVO_SET_ABC_ENABLE, // Enable/Disable servo peripheral | A | B | C |
     PERIPH_SERVO_SET_ABC_POS,    // Set same position for all channels [deprecated]
     PERIPH_SERVO_SET_ABC_PULSE,  // Set same pulse for all channels (duration | pulse)
     PERIPH_SERVO_SET_ABC_PERIOD, // Set channels period
@@ -146,10 +146,12 @@ typedef enum {
     PERIPH_DC_SET_CD_MODE,        // (0-motor, 1-motor_group)
     PERIPH_DC_SET_AB_FREQUENCY,   // Set channels AB PWM frequency
     PERIPH_DC_SET_CD_FREQUENCY,   // Set channels CD PWM frequency
-    PERIPH_DC_SET_AB_POWER_MAX,   // [removed]
-    PERIPH_DC_SET_CD_POWER_MAX,   // [removed]
+    PERIPH_DC_SET_ABCD_FREQUENCY, // Set channels ABCD PWM frequency
+    PERIPH_DC_SET_RESERVED,       // reserved
     PERIPH_DC_SET_AB_TONE,        // Play channels AB tone (duration | freq)
     PERIPH_DC_SET_CD_TONE,        // Play channels CD tone (duration | freq)
+    PERIPH_DC_SET_ABCD_TONE,      // Play channels ABCD tone (duration | freq)
+    PERIPH_DC_SET_RESERVED2,      // reserved
     PERIPH_DC_SET_ABCD_DECAY,     // Set channels ABCD decay | A | B | C | D | (decay(0-s,1-f))
 
     // RGB group
