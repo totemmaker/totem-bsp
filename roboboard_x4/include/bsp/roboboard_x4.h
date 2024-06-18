@@ -51,8 +51,255 @@ extern "C" {
 #endif
 
 /**************************************************************************************************
- * Totem RoboBoard X4 board control
+ * Totem RoboBoard X4 low level control API
  **************************************************************************************************/
+// Board events list
+enum {
+    // USB cable plug/unplug event (called from ISR)
+    BSP_EVT_USB,
+    // DC power adapter plug/unplug event (called from ISR)
+    BSP_EVT_POWER,
+    // Button press/release event (called from ISR)
+    BSP_EVT_BUTTON,
+    // Servo position pulse change (during speed control)
+    BSP_EVT_SERVO_PULSE,
+};
+// Board events function
+typedef void (*bsp_evt_func_t)(uint32_t evt, uint32_t portID, uint32_t value, void *arg);
+// Names for A, B, C, D ports
+enum {
+    BSP_PORT_ALL = -1, // All ports
+    BSP_PORT_A = 0, // Port A
+    BSP_PORT_B = 1, // Port B
+    BSP_PORT_C = 2, // Port C
+    BSP_PORT_D = 3, // Port D
+};
+
+/// @brief Initialize BSP driver
+/// @return ESP error
+esp_err_t bsp_board_init();
+/// @brief Register board events function
+/// @param func event function handler
+/// @param arg pointer passed to handler
+/// @return ESP error
+esp_err_t bsp_board_reg_event(bsp_evt_func_t func, void *arg);
+
+/*******************************
+ * Board control functions
+ ******************************/
+
+/// @brief Turn LED (pin 13) (default - off)
+/// @param state [0] off, [1] on
+/// @return ESP error
+esp_err_t bsp_board_set_led(uint32_t state);
+/// @brief Turn CAN bus transceiver (default - off)
+/// @param state [0] off, [1] on
+/// @return ESP error
+esp_err_t bsp_board_set_can(uint32_t state);
+/// @brief Turn 5V power rail (default - on) (v1.1 only)
+/// @param state [0] off, [1] on
+/// @note  Affects servo (+) and RGB power
+/// @return ESP error
+esp_err_t bsp_board_set_5V(uint32_t state);
+/// @brief Get board revision
+/// @return Format: [12] -> v1.2
+int bsp_board_get_revision();
+/// @brief Get motor driver firmware version
+/// @return Format: [123] -> v1.23
+int bsp_board_get_firmware();
+/// @brief Is button pressed
+/// @return [0] released, [1] pressed
+int bsp_board_get_button();
+/// @brief Is power adapter plugged in (v1.0 only)
+/// @return [0] unplugged, [1] plugged in
+int bsp_board_get_power();
+/// @brief Is USB cable plugged in
+/// @return [0] unplugged, [1] plugged in
+int bsp_board_get_usb();
+
+/*******************************
+ * Battery control functions
+ ******************************/
+
+/// @brief Read battery voltage
+/// @return [8400:12600]mV (millivolts)
+int bsp_battery_get_voltage();
+
+/*******************************
+ * DC control functions
+ ******************************/
+
+/// @brief Spin motor
+/// @param portID [0:3] port number, [-1] all ports
+/// @param power [-100:100]% power and direction, [0] coast
+/// @return ESP error
+esp_err_t bsp_dc_spin(int8_t portID, int32_t power);
+/// @brief Brake motor
+/// @param portID [0:3] port number, [-1] all ports
+/// @param power [0:100]% power and direction, [0] coast
+/// @return ESP error
+esp_err_t bsp_dc_brake(int8_t portID, uint32_t power);
+/// @brief Output audible tone to AB ports
+/// @param frequency [0:20000]Hz tone frequency
+/// @param duration duration of time play (ms), [0] indefinitely
+/// @return ESP error
+esp_err_t bsp_dc_tone_AB(uint32_t frequency, uint32_t duration);
+/// @brief Output audible tone to CD ports
+/// @param frequency [0:20000]Hz tone frequency
+/// @param duration duration of time play (ms), [0] indefinitely
+/// @return ESP error
+esp_err_t bsp_dc_tone_CD(uint32_t frequency, uint32_t duration);
+/// @brief Output audible tone to ABCD ports
+/// @param frequency [0:20000]Hz tone frequency
+/// @param duration duration of time play (ms), [0] indefinitely
+/// @return ESP error
+esp_err_t bsp_dc_tone_ABCD(uint32_t frequency, uint32_t duration);
+/// @brief Toggle port output (default - enabled)
+/// @param portID [0:3] port number, [-1] all ports
+/// @param enable [0] disable output, [1] enable output
+/// @return ESP error
+esp_err_t bsp_dc_set_enable(int8_t portID, uint32_t enable);
+/// @brief Change decay mode (default - slow)
+/// @param portID [0:3] port number, [-1] all ports
+/// @param decay [0] slow decay, [1] fast decay
+/// @return ESP error
+esp_err_t bsp_dc_set_decay(int8_t portID, uint32_t decay);
+/// @brief Change PWM frequency for AB ports (default - 20000)
+/// @param frequency [0:250000]Hz PWM frequency
+/// @return ESP error
+esp_err_t bsp_dc_set_frequency_AB(uint32_t frequency);
+/// @brief Change PWM frequency for CD ports (default - 20000)
+/// @param frequency [0:250000]Hz PWM frequency
+/// @return ESP error
+esp_err_t bsp_dc_set_frequency_CD(uint32_t frequency);
+/// @brief Change PWM frequency for ABCD ports (default - 20000)
+/// @param frequency [0:250000]Hz PWM frequency
+/// @return ESP error
+esp_err_t bsp_dc_set_frequency_ABCD(uint32_t frequency);
+/// @brief Change group AB mode (default - individual)
+/// @param mode [0] individual control, [1] group control
+/// @return ESP error
+esp_err_t bsp_dc_set_mode_AB(uint32_t mode);
+/// @brief Change group CD mode (default - individual)
+/// @param mode [0] individual control, [1] group control
+/// @return ESP error
+esp_err_t bsp_dc_set_mode_CD(uint32_t mode);
+/// @brief Get selected decay mode
+/// @param portID [0:3] port number
+/// @return [0] slow decay, [1] fast decay
+int bsp_dc_get_decay(uint8_t portID);
+/// @brief Get configured PWM frequency of AB ports
+/// @return [0:250000]Hz PWM frequency
+int bsp_dc_get_frequency_AB();
+/// @brief Get configured PWM frequency of CD ports
+/// @return [0:250000]Hz PWM frequency
+int bsp_dc_get_frequency_CD();
+
+/*******************************
+ * Servo control functions
+ ******************************/
+
+/// @brief Spin servo motor to position
+/// @param portID [0:2] port number, [-1] all ports
+/// @param pulse [0:period]us position
+/// @return ESP error
+esp_err_t bsp_servo_spin(int8_t portID, uint32_t pulse);
+/// @brief Spin servo motor to position
+/// @param portID [0:2] port number, [-1] all ports
+/// @param pulse [0:period]us position
+/// @param duration [0] max speed, spin speed in duration (ms) (overrides default speed)
+/// @note  Duration: amount of time to spin from current to target position
+/// @return ESP error
+esp_err_t bsp_servo_spin_duration(int8_t portID, uint32_t pulse, uint32_t duration);
+/// @brief Spin servo motor to position
+/// @param portID [0:2] port number, [-1] all ports
+/// @param pulse [0:period]us position
+/// @param ppp [0] max speed, spin speed in PPP unit (overrides default speed)
+/// @note  Pulse-Per-Period: ppp = (RPM * 6 * (motorUsMax - motorUsMin)) / motorAngle / 50
+/// @return ESP error
+esp_err_t bsp_servo_spin_ppp(int8_t portID, uint32_t pulse, uint32_t ppp);
+/// @brief Toggle port output (default - enabled)
+/// @param portID [0:2] port number, [-1] all ports
+/// @param enable [0] disable output, [1] enable output
+/// @return ESP error
+esp_err_t bsp_servo_set_enable(int8_t portID, uint32_t enable);
+/// @brief Configure constant motor speed (default - disabled)
+/// @param portID [0:2] port number, [-1] all ports
+/// @param ppp [0] disabled (max speed), spin speed in PPP unit
+/// @note  Pulse-Per-Period: ppp = (RPM * 6 * (motorUsMax - motorUsMin)) / motorAngle / 50
+/// @return ESP error
+esp_err_t bsp_servo_set_speed_ppp(int8_t portID, uint32_t ppp);
+/// @brief Change PWM period for ABC ports (default - 20000)
+/// @param period [1:65535]us PWM period
+/// @return ESP error
+esp_err_t bsp_servo_set_period(uint32_t period);
+/// @brief Get configured PWM period of ABC ports
+/// @return [1:65535]us PWM period
+int bsp_servo_get_period();
+/// @brief Read servo motor position
+/// @param portID [0:2] port number
+/// @return [0:period]us position pulse
+int bsp_servo_get_pulse(uint8_t portID);
+
+/*******************************
+ * RGB control functions
+ ******************************/
+
+/// @brief Change RGB light color
+/// @param ledID [0:3] LED number, [-1] all LEDs
+/// @param hex 32bit color | Alpha | Red | Green | Blue |
+/// @return ESP error
+esp_err_t bsp_rgb_color(int8_t ledID, uint32_t hex);
+/// @brief Prepare RGB light fade color
+/// @param ledID [0:3] LED number, [-1] all LEDs
+/// @param hex 32bit fade color | Alpha | Red | Green | Blue |
+/// @return ESP error
+esp_err_t bsp_rgb_fade_color(int8_t ledID, uint32_t hex);
+/// @brief Run fade animation
+/// @param ledID [0:3] LED number, [-1] all LEDs
+/// @param duration animation duration (ms)
+/// @return ESP error
+esp_err_t bsp_rgb_fade_start(int8_t ledID, uint32_t duration);
+/// @brief Toggle LED output (default - enabled)
+/// @param ledID [0:3] LED number, [-1] all LEDs
+/// @param enable [0] LED is disabled, [1] LED is enabled
+/// @return ESP error
+esp_err_t bsp_rgb_set_enable(int8_t ledID, uint32_t enable);
+
+/*******************************
+ * GPIO pin control functions. RoboBoard X4 v1.0 only!
+ * Pins are connected to peripheral driver (STM32) so
+ * additional functions are required for interaction.
+ * For later versions use standard GPIO API!
+ ******************************/
+
+/// @brief Read digital state of GPIO pin
+/// @param pinID [0:3] pin number (A, B, C, D)
+/// @return [0] LOW, [1] HIGH
+uint32_t bsp_gpio_digital_read(uint8_t pinID);
+/// @brief Write digital state to GPIO pin
+/// @param pinID [0:3] pin number (A, B, C, D)
+/// @param state [0] LOW, [1] HIGH
+void bsp_gpio_digital_write(uint8_t pinID, uint8_t state);
+/// @brief Configure GPIO mode
+/// @param pinID [0:3] pin number (A, B, C, D)
+/// @param mode [0] pd, [1] pu, [2] float, [3] out, [4] analog
+void bsp_gpio_mode(uint8_t pinID, uint8_t mode);
+/// @brief Read analog value of GPIO pin
+/// @param pinID [0:3] pin number (A, B, C, D)
+/// @return [0:1023] ADC measurement
+uint32_t bsp_gpio_analog_read(uint8_t pinID);
+/// @brief Write analog value (PWM) to GPIO pin
+/// @param pinID [0:3] pin number (A, B, C, D)
+/// @param value [0:20] duty cycle
+void bsp_gpio_analog_write(uint8_t pinID, uint16_t value);
+
+/**************************************************************************************************
+ * Legacy command oriented control API. Keeping for backwards compatibility (will be removed)
+ **************************************************************************************************/
+/// @brief Callback of bsp_register_interrupt_callback function
+/// @param arg pointer passed to bsp_register_interrupt_callback
+typedef void (*bsp_interrupt_func_t)(void *arg);
 
 typedef uint32_t bsp_cmd_t;
 // List of common RoboBoard X4 commands
@@ -100,7 +347,7 @@ enum {
 
     // Servo motor ports control
 
-    // [write|read|irq] spin to [0:period]us. Optional speed control:
+    // [write|read] spin to [0:period]us. Optional speed control:
     // Duration [0:0x7FFF]ms. ((duration << 16) | pulse). Overrides BSP_SERVO_CONFIG_SPEED.
     // PPP 0x8000 | [0:0x7FFF]. (0x8000 | (ppp << 16) | pulse). Overrides BSP_SERVO_CONFIG_SPEED.
     BSP_SERVO_PULSE,
@@ -125,29 +372,6 @@ enum {
     BSP_CMD_MAX
 };
 
-// Names for A, B, C, D ports.
-// Can also use integers (0, 1, 2, 3).
-enum {
-    /// @brief Affect all available ports
-    BSP_PORT_ALL = -1,
-    /// @brief Affect port A
-    BSP_PORT_A = 0,
-    /// @brief Affect port B
-    BSP_PORT_B = 1,
-    /// @brief Affect port C
-    BSP_PORT_C = 2,
-    /// @brief Affect port D
-    BSP_PORT_D = 3,
-};
-
-/// @brief Callback of bsp_register_interrupt_callback function
-/// @param arg pointer passed to bsp_register_interrupt_callback
-typedef void (*bsp_interrupt_func_t)(void *arg);
-
-/// @brief Initialize board
-/// @return ESP error
-esp_err_t bsp_board_init(void);
-
 /// @brief Write value to command
 /// @note Only commands with [write] tag can be used
 /// @param cmd command name from `bsp_cmd_t` list
@@ -160,16 +384,16 @@ esp_err_t bsp_board_init(void);
 ///         ESP_ERR_INVALID_SIZE  - value is out of range
 ///         ESP_ERR_NOT_FOUND     - invalid cmd
 ///         ESP_ERR_NOT_SUPPORTED - action not suported
-esp_err_t bsp_cmd_write(bsp_cmd_t cmd, int8_t port, int32_t value);
+esp_err_t bsp_cmd_write(bsp_cmd_t cmd, int8_t port, int32_t value) __attribute__ ((deprecated));
 
 /// @brief Read command value
 /// @note Only commands with [read] tag can be used
 /// @param cmd command name from `bsp_cmd_t` list
 /// @param port port number (A, B, C, D)
 /// @return value received from command. 0 if error
-int32_t bsp_cmd_read(bsp_cmd_t cmd, uint8_t port);
+int32_t bsp_cmd_read(bsp_cmd_t cmd, uint8_t port) __attribute__ ((deprecated));
 
-/// @brief Register global event receiver. Will be called on each value change
+/// @brief Register global interrupt receiver. Will be called on each value change
 /// @note Only commands with [irq] tag can be registered
 /// @param cmd command name from `bsp_cmd_t` list
 /// @param func interrupt function callback
@@ -178,39 +402,7 @@ int32_t bsp_cmd_read(bsp_cmd_t cmd, uint8_t port);
 ///         ESP_OK                - success
 ///         ESP_ERR_INVALID_STATE - ISR init fail or BSP not initialized
 ///         ESP_ERR_NOT_SUPPORTED - cmd not supported
-esp_err_t bsp_register_interrupt_callback(bsp_cmd_t cmd, bsp_interrupt_func_t func, void *arg);
-
-/*******************************
- * GPIO pin control functions. RoboBoard X4 v1.0 only!
- * Pins are connected to peripheral driver (STM32) so
- * additional functions are required for interaction.
- * For later versions use standard GPIO API!
- ******************************/
-
-/// @brief Read digital state of GPIO pin
-/// @param port pin number (A, B, C, D)
-/// @return [0] - LOW, [1] - HIGH
-uint32_t bsp_gpio_digital_read(uint8_t port);
-
-/// @brief Write digital state to GPIO pin
-/// @param port pin number (A, B, C, D)
-/// @param state pin state: [0] - LOW, [1] - HIGH
-void bsp_gpio_digital_write(uint8_t port, uint8_t state);
-
-/// @brief Configure GPIO mode
-/// @param port pin number (A, B, C, D)
-/// @param mode 0-pd, 1-pu, 2-float, 3-out, 4-analog
-void bsp_gpio_mode(uint8_t port, uint8_t mode);
-
-/// @brief Read analog value of GPIO pin
-/// @param port pin number (A, B, C, D)
-/// @return [0:1023]
-uint32_t bsp_gpio_analog_read(uint8_t port);
-
-/// @brief Write analog value (PWM) to GPIO pin
-/// @param port pin number (A, B, C, D)
-/// @param value duty cycle [0:20]
-void bsp_gpio_analog_write(uint8_t port, uint16_t value);
+esp_err_t bsp_register_interrupt_callback(bsp_cmd_t cmd, bsp_interrupt_func_t func, void *arg) __attribute__ ((deprecated));
 
 #ifdef __cplusplus
 }

@@ -59,7 +59,7 @@ esp_err_t bsp_imu_init(int i2c_num) {
     esp_err_t err = ESP_FAIL;
     i2c.num = i2c_num;
     // Find driver type
-    switch (bsp_cmd_read(BSP_BOARD_REVISION, 0)) {
+    switch (bsp_board_get_revision()) {
         case 11: imu_type = IMU_DRIVER_ICM20689; break;
         case 10: imu_type = IMU_DRIVER_LSM6DS3; break;
     }
