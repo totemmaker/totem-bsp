@@ -12,6 +12,7 @@
 #include "driver/gpio.h"
 #include "driver/twai.h"
 
+#define IGNORE_WARNING
 #include "bsp/can.h"
 #include "bsp/roboboard_x4.h"
 

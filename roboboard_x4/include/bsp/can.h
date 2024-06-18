@@ -10,6 +10,10 @@
 
 #include "esp_err.h"
 
+#ifndef IGNORE_WARNING
+#warning "bsp/can.h is deprecated and will be removed. Use driver/twai.h"
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif
