@@ -14,7 +14,6 @@
 
 #include "bsp/totem-bsp.h"
 #include "bsp/imu.h"
-#include "bsp/can.h"
 
 int button_irq;
 
@@ -44,12 +43,20 @@ void print_board_info() {
     TEST_PRINT("Driver: %d", bsp_cmd_read(BSP_DRIVER_FIRMWARE, 0));
     TEST_PRINT("Battery: %d mV", bsp_cmd_read(BSP_BATTERY_VOLTAGE, 0));
     TEST_PRINT("DC frequency: %d Hz", bsp_cmd_read(BSP_DC_CONFIG_FREQUENCY, 0));
+    TEST_PRINT("DC decay: %s", bsp_cmd_read(BSP_DC_CONFIG_DECAY, 0)==0 ? "slow" : "fast");
     TEST_PRINT("Servo period: %d us", bsp_cmd_read(BSP_SERVO_CONFIG_PERIOD, 0));
 }
 
 void wait_button() {
     while (bsp_cmd_read(BSP_BUTTON_STATE, 0) == 1) { vTaskDelay(10); }
     while (bsp_cmd_read(BSP_BUTTON_STATE, 0) == 0) { vTaskDelay(10); }
+}
+
+static int RPMtoPPP(float rpm) {
+    const int motorUsMin = 500;
+    const int motorUsMax = 2500;
+    const int motorAngle = 180;
+    return (rpm * 360 / 60 / 50) * (motorUsMax - motorUsMin) / motorAngle;
 }
 
 // Manually test if features are actually working
@@ -91,7 +98,7 @@ void run_hardware_test() {
     bsp_cmd_write(BSP_RGB_COLOR, BSP_PORT_ALL, 0xFF00FF00);
     TEST_PRINT("RGB set BLUE"); wait_button();
     bsp_cmd_write(BSP_RGB_COLOR, BSP_PORT_ALL, 0xFF0000FF);
-    TEST_PRINT("RGB set BLUE alpha 50%"); wait_button();
+    TEST_PRINT("RGB set BLUE alpha 50%%"); wait_button();
     bsp_cmd_write(BSP_RGB_COLOR, BSP_PORT_ALL, 0x800000FF);
     TEST_PRINT("RGB fade to white in 3s"); wait_button();
     bsp_cmd_write(BSP_RGB_FADE_COLOR, BSP_PORT_ALL, 0xFFFFFFFF);
@@ -104,6 +111,10 @@ void run_hardware_test() {
     bsp_cmd_write(BSP_RGB_CONFIG_ENABLE, BSP_PORT_C, 0);
     TEST_PRINT("RGB disable D"); wait_button();
     bsp_cmd_write(BSP_RGB_CONFIG_ENABLE, BSP_PORT_D, 0);
+    TEST_PRINT("RGB set all GREEN 50%%"); wait_button();
+    bsp_cmd_write(BSP_RGB_COLOR, BSP_PORT_ALL, 0x8000FF00);
+    TEST_PRINT("RGB enable all"); wait_button();
+    bsp_cmd_write(BSP_RGB_CONFIG_ENABLE, BSP_PORT_ALL, 1);
     // Test motor
     TEST_PRINT("--- Test Motor ---");
     TEST_PRINT("Spin A"); wait_button();
@@ -121,18 +132,17 @@ void run_hardware_test() {
     TEST_PRINT("Spin D"); wait_button();
     bsp_cmd_write(BSP_DC_POWER, BSP_PORT_D, 50);
     TEST_PRINT("Beep CD"); wait_button();
-    bsp_cmd_write(BSP_DC_TONE, BSP_PORT_D, 1000);
+    bsp_cmd_write(BSP_DC_TONE, BSP_PORT_D, 4000);
     TEST_PRINT("Beep AB"); wait_button();
-    bsp_cmd_write(BSP_DC_TONE, BSP_PORT_B, 1000);
-    bsp_cmd_write(BSP_DC_TONE, BSP_PORT_D, 0);
+    bsp_cmd_write(BSP_DC_TONE, BSP_PORT_B, 4000);
     TEST_PRINT("Stop"); wait_button();
-    bsp_cmd_write(BSP_DC_TONE, BSP_PORT_A, 0);
-    TEST_PRINT("AB spin frequency 50Hz"); wait_button();
+    bsp_cmd_write(BSP_DC_TONE, BSP_PORT_ALL, 0);
+    TEST_PRINT("AB spin frequency 20kHz"); wait_button();
     bsp_cmd_write(BSP_DC_POWER, BSP_PORT_A, 50);
     bsp_cmd_write(BSP_DC_POWER, BSP_PORT_B, 50);
     TEST_PRINT("AB spin frequency 2000Hz"); wait_button();
     bsp_cmd_write(BSP_DC_CONFIG_FREQUENCY, BSP_PORT_B, 2000);
-    TEST_PRINT("DC spin frequency 50Hz"); wait_button();
+    TEST_PRINT("DC spin frequency 20kHz"); wait_button();
     bsp_cmd_write(BSP_DC_POWER, BSP_PORT_ALL, 0);
     bsp_cmd_write(BSP_DC_POWER, BSP_PORT_C, 50);
     bsp_cmd_write(BSP_DC_POWER, BSP_PORT_D, 50);
@@ -188,7 +198,7 @@ void run_hardware_test() {
     TEST_PRINT("Spin B to 500"); wait_button();
     bsp_cmd_write(BSP_SERVO_PULSE, BSP_PORT_B, 500);
     TEST_PRINT("Spin B to 1500 in 1s"); wait_button();
-    bsp_cmd_write(BSP_SERVO_CONFIG_SPEED, BSP_PORT_B, 15 * 60); // Set 15 RPM
+    bsp_cmd_write(BSP_SERVO_CONFIG_SPEED, BSP_PORT_B, RPMtoPPP(15)); // Set 15 RPM
     bsp_cmd_write(BSP_SERVO_PULSE, BSP_PORT_B, 1500);
     TEST_PRINT("Spin B to 500 in 2s"); wait_button();
     bsp_cmd_write(BSP_SERVO_PULSE, BSP_PORT_B, 2000 << 16 | 500);

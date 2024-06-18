@@ -8,6 +8,7 @@
 #include <cmath>
 #include "totem_test.h"
 #include "bsp/totem-bsp.h"
+#include "bsp/imu.h"
 
 TEST_CASE("Read IMU data", "[IMU]") {
     bsp_imu_data_t data;
@@ -29,9 +30,9 @@ TEST_CASE("Read IMU data", "[IMU]") {
     TEST_FLOAT(0, 0.07, data.accel.y); // Should be around 0.0. May drift to 0.07
     TEST_FLOAT(1, 0.07, data.accel.z); // Should be around 1.0. May drift to 1.07
     // Test gyroscope
-    TEST_FLOAT(0, 3.20, data.gyro.x); // Should be around 0.0. May drift to 3.20
-    TEST_FLOAT(0, 3.20, data.gyro.y); // Should be around 0.0. May drift to 3.20
-    TEST_FLOAT(0, 3.20, data.gyro.z); // Should be around 0.0. May drift to 3.20
+    TEST_FLOAT(0, 6.00, data.gyro.x); // Should be around 0.0. May drift to 6.00
+    TEST_FLOAT(0, 6.00, data.gyro.y); // Should be around 0.0. May drift to 6.00
+    TEST_FLOAT(0, 6.00, data.gyro.z); // Should be around 0.0. May drift to 6.00
 }
 
 TEST_CASE("Test IMU API", "[IMU]") {

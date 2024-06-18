@@ -5,8 +5,17 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
+#include <string.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "freertos/queue.h"
+#include "driver/twai.h"
 #include "totem_test.h"
 #include "bsp/totem-bsp.h"
+
+#define BSP_CAN_FlagExt 0x80000000U
+#define BSP_CAN_FlagRTR 0x40000000U
+#define BSP_CAN_id      0x3FFFFFFFU
 
 struct CanMsg {
     uint32_t id;
@@ -16,32 +25,35 @@ struct CanMsg {
 
 static CanMsg can_rcv_msg[15];
 static int can_rcv_cnt;
-void on_can_msg(void *args, uint32_t id, uint8_t *data, uint8_t len) {
-    // Store received message
-    TEST_ASSERT(can_rcv_cnt < (sizeof(can_rcv_msg)/sizeof(can_rcv_msg[0])));
-    TEST_ASSERT(len <= 8);
-    can_rcv_msg[can_rcv_cnt].id = id;
-    can_rcv_msg[can_rcv_cnt].len = len;
-    memcpy(can_rcv_msg[can_rcv_cnt++].data, data, len);
+
+static void twai_receive_task(void *context) {
+    twai_message_t message;
+    for (;;) {
+        // Loop to receive CAN packets and forward to callback
+        if (twai_receive(&message, portMAX_DELAY) == ESP_OK) {
+            // Store received message
+            TEST_ASSERT(can_rcv_cnt < (sizeof(can_rcv_msg)/sizeof(can_rcv_msg[0])));
+            TEST_ASSERT(message.data_length_code <= 8);
+            can_rcv_msg[can_rcv_cnt].id = message.identifier;
+            if (message.extd) can_rcv_msg[can_rcv_cnt].id |= BSP_CAN_FlagExt;
+            if (message.rtr) can_rcv_msg[can_rcv_cnt].id |= BSP_CAN_FlagRTR;
+            can_rcv_msg[can_rcv_cnt].len = message.data_length_code;
+            memcpy(can_rcv_msg[can_rcv_cnt++].data, message.data, message.data_length_code);
+        }
+    }
 }
 
 TEST_CASE("Test CAN bus", "[CAN]") {
-    // Check if initialization state is validated
-    uint8_t dummy[9];
-#if ESP_IDF_VERSION < ESP_IDF_VERSION_VAL(5, 0, 0)
-    TEST_ERROR(ESP_ERR_INVALID_STATE, bsp_can_send(0, dummy, 2));
-#else
-    TEST_ERROR(ESP_ERR_INVALID_ARG, bsp_can_send(0, dummy, 2));
-#endif
     // Initialize TWAI driver (in self test mode)
-    TEST_ERROR(ESP_OK, bsp_twai_init(1));
+    const twai_general_config_t g_config = TWAI_GENERAL_CONFIG_DEFAULT(BSP_IO_CAN_TX, BSP_IO_CAN_RX, TWAI_MODE_NO_ACK);
+    const twai_timing_config_t t_config = TWAI_TIMING_CONFIG_500KBITS();
+    const twai_filter_config_t f_config = TWAI_FILTER_CONFIG_ACCEPT_ALL();
+    // Initialize TWAI driver
+    TEST_ERROR(ESP_OK, twai_driver_install(&g_config, &t_config, &f_config));
+    xTaskCreatePinnedToCore(twai_receive_task, "TWAI_receive", 2048, NULL, 8, NULL, tskNO_AFFINITY);
     // Initialize CAN library
-    TEST_ERROR(ESP_OK, bsp_can_init(on_can_msg, NULL));
-    TEST_ERROR(ESP_OK, bsp_can_enable(1));
-    // Try sending more than 8 bytes
-    TEST_ERROR(ESP_ERR_INVALID_SIZE, bsp_can_send(0, dummy, 9));
-    // Error if data has null pointer
-    TEST_ERROR(ESP_ERR_INVALID_ARG, bsp_can_send(0, NULL, 7));
+    bsp_cmd_write(BSP_CAN_STATE, 0, 1); // On transceiver
+    TEST_ERROR(ESP_OK, twai_start()); // Start twai driver
     // Prepare test packets
     CanMsg msgList[] = {
         /*0*/{0xFF, 2, {0xA, 0xB}},
@@ -56,7 +68,17 @@ TEST_CASE("Test CAN bus", "[CAN]") {
     // Send all test packets
     for (int i=0; i<(sizeof(msgList)/sizeof(msgList[0])); i++) {
         TEST_MESSAGE("i=%d", i);
-        TEST_ERROR(ESP_OK, bsp_can_send(msgList[i].id, msgList[i].data, msgList[i].len));
+        // Prepare message
+        twai_message_t message;
+        memset(&message, 0, sizeof(message));
+        message.data_length_code = msgList[i].len;
+        message.identifier = msgList[i].id & BSP_CAN_id;
+        message.extd = !!(msgList[i].id & BSP_CAN_FlagExt);
+        message.rtr = !!(msgList[i].id & BSP_CAN_FlagRTR);
+        memcpy(message.data, msgList[i].data, msgList[i].len);
+        message.self = 1;
+        // Put message to queue
+        TEST_ERROR(ESP_OK, twai_transmit(&message, 50));
     }
     // Wait for all packets to receive in "on_can_msg" handler
     TEST_DELAY(100);
