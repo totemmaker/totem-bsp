@@ -92,10 +92,6 @@ esp_err_t bsp_board_reg_event(bsp_evt_func_t func, void *arg);
 /// @param state [0] off, [1] on
 /// @return ESP error
 esp_err_t bsp_board_set_led(uint32_t state);
-/// @brief Turn CAN bus transceiver (default - off)
-/// @param state [0] off, [1] on
-/// @return ESP error
-esp_err_t bsp_board_set_can(uint32_t state);
 /// @brief Turn 5V power rail (default - on) (v1.1 only)
 /// @param state [0] off, [1] on
 /// @note  Affects servo (+) and RGB power
@@ -131,12 +127,12 @@ int bsp_battery_get_voltage();
 
 /// @brief Spin motor
 /// @param portID [0:3] port number, [-1] all ports
-/// @param power [-100:100]% power and direction, [0] coast
+/// @param power [-100:100]% power and direction, [0] no power
 /// @return ESP error
 esp_err_t bsp_dc_spin(int8_t portID, int32_t power);
 /// @brief Brake motor
 /// @param portID [0:3] port number, [-1] all ports
-/// @param power [0:100]% power and direction, [0] coast
+/// @param power [0:100]% braking power, [0] coast
 /// @return ESP error
 esp_err_t bsp_dc_brake(int8_t portID, uint32_t power);
 /// @brief Output audible tone to AB ports
@@ -165,15 +161,15 @@ esp_err_t bsp_dc_set_enable(int8_t portID, uint32_t enable);
 /// @return ESP error
 esp_err_t bsp_dc_set_decay(int8_t portID, uint32_t decay);
 /// @brief Change PWM frequency for AB ports (default - 20000)
-/// @param frequency [0:250000]Hz PWM frequency
+/// @param frequency [1:250000]Hz PWM frequency
 /// @return ESP error
 esp_err_t bsp_dc_set_frequency_AB(uint32_t frequency);
 /// @brief Change PWM frequency for CD ports (default - 20000)
-/// @param frequency [0:250000]Hz PWM frequency
+/// @param frequency [1:250000]Hz PWM frequency
 /// @return ESP error
 esp_err_t bsp_dc_set_frequency_CD(uint32_t frequency);
 /// @brief Change PWM frequency for ABCD ports (default - 20000)
-/// @param frequency [0:250000]Hz PWM frequency
+/// @param frequency [1:250000]Hz PWM frequency
 /// @return ESP error
 esp_err_t bsp_dc_set_frequency_ABCD(uint32_t frequency);
 /// @brief Change group AB mode (default - individual)
@@ -189,10 +185,10 @@ esp_err_t bsp_dc_set_mode_CD(uint32_t mode);
 /// @return [0] slow decay, [1] fast decay
 int bsp_dc_get_decay(uint8_t portID);
 /// @brief Get configured PWM frequency of AB ports
-/// @return [0:250000]Hz PWM frequency
+/// @return [1:250000]Hz PWM frequency
 int bsp_dc_get_frequency_AB();
 /// @brief Get configured PWM frequency of CD ports
-/// @return [0:250000]Hz PWM frequency
+/// @return [1:250000]Hz PWM frequency
 int bsp_dc_get_frequency_CD();
 
 /*******************************
@@ -232,10 +228,10 @@ esp_err_t bsp_servo_set_speed_ppp(int8_t portID, uint32_t ppp);
 /// @brief Change PWM period for ABC ports (default - 20000)
 /// @param period [1:65535]us PWM period
 /// @return ESP error
-esp_err_t bsp_servo_set_period(uint32_t period);
+esp_err_t bsp_servo_set_period_ABC(uint32_t period);
 /// @brief Get configured PWM period of ABC ports
 /// @return [1:65535]us PWM period
-int bsp_servo_get_period();
+int bsp_servo_get_period_ABC();
 /// @brief Read servo motor position
 /// @param portID [0:2] port number
 /// @return [0:period]us position pulse
@@ -338,7 +334,7 @@ enum {
     // [write] beep tone [0:20000]Hz. Duration [0:0xFFFF]ms (auto stop).
     // ((duration << 16) | freq). Ports AB, CD are grouped together
     BSP_DC_TONE,
-    // [write|read] PWM [0:250000]Hz. Ports AB, CD are grouped together
+    // [write|read] PWM [1:250000]Hz. Ports AB, CD are grouped together
     BSP_DC_CONFIG_FREQUENCY,
     // [write|read] decay [0-slow, 1-fast]
     BSP_DC_CONFIG_DECAY,

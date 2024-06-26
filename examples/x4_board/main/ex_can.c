@@ -84,8 +84,6 @@ void run_example_can(void) {
     ESP_ERROR_CHECK(twai_driver_install(&g_config, &t_config, &f_config));
     // Start receive task
     xTaskCreatePinnedToCore(twai_receive_task, "TWAI_receive", 2048, NULL, 9, NULL, tskNO_AFFINITY);
-    // Turn CAN transceiver on
-    bsp_board_set_can(1);
     // Start twai driver
     ESP_ERROR_CHECK(twai_start());
     // Send messages

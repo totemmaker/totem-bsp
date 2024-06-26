@@ -20,6 +20,8 @@
 #define DC_CNT 4
 #define SERVO_CNT 3
 #define RGB_CNT 4
+// Error handler
+#define BSP_ERR(bsp_func) { esp_err_t err = bsp_func; if (err) return err; }
 // IDF version dependent ADC setup functions
 void bsp_adc1_init(adc_channel_t channel);
 uint32_t bsp_adc1_get_raw();
@@ -64,11 +66,10 @@ static void bsp_on_isr(void *arg) {
 /// @brief Initialize BSP driver
 /// @return ESP error
 esp_err_t bsp_board_init() {
-    esp_err_t err = ESP_FAIL;
     gpio_config_t pGPIOConfig = {0};
     pGPIOConfig.intr_type = GPIO_INTR_ANYEDGE;
     // Initialize LED & CAN transceiver enable pin
-    gpio_set_level(BSP_IO_CAN_EN, 1); // Turn transceiver Off
+    gpio_set_level(BSP_IO_CAN_EN, 0); // Leave CAN transceiver always On
     pGPIOConfig.mode = GPIO_MODE_OUTPUT;
     pGPIOConfig.pin_bit_mask = GPIO_SEL(BSP_IO_LED)|GPIO_SEL(BSP_IO_CAN_EN);
     gpio_config(&pGPIOConfig);
@@ -83,13 +84,13 @@ esp_err_t bsp_board_init() {
     // Initialize battery analog read
     bsp_adc1_init(ADC_CHANNEL_0); // (BSP_IO_BATTERY_VOLTAGE) GPIO36 (SENSOR_VP) of ADC1
     // Establish connection to peripheral driver
-    if (err=periph_driver_init(periph_on_value_update), err) return err;
+    BSP_ERR(periph_driver_init(periph_on_value_update));
     // Initialize pin interrupts
-    if (err=gpio_install_isr_service(0), err) return err;
-    if (err=gpio_isr_handler_add(BSP_IO_BUTTON, bsp_on_isr, (void*)BSP_EVT_BUTTON), err) return err;
-    if (err=gpio_isr_handler_add(BSP_IO_USB_DETECT, bsp_on_isr, (void*)BSP_EVT_USB), err) return err;
+    BSP_ERR(gpio_install_isr_service(0));
+    BSP_ERR(gpio_isr_handler_add(BSP_IO_BUTTON, bsp_on_isr, (void*)BSP_EVT_BUTTON));
+    BSP_ERR(gpio_isr_handler_add(BSP_IO_USB_DETECT, bsp_on_isr, (void*)BSP_EVT_USB));
     if (bsp_board_revision != 11) { // Revision 1.1 does not support DC power jack detection
-        if (err=gpio_isr_handler_add(BSP_IO_POWER_DETECT, bsp_on_isr, (void*)BSP_EVT_POWER), err) return err;
+        BSP_ERR(gpio_isr_handler_add(BSP_IO_POWER_DETECT, bsp_on_isr, (void*)BSP_EVT_POWER));
     }
     // Load default configuration values
     if (bsp_driver_version < 160) {
@@ -108,11 +109,13 @@ esp_err_t bsp_board_init() {
         vTaskDelay(pdMS_TO_TICKS(10));
     }
     else {
+        // Enable RGB
+        bsp_rgb_set_enable(BSP_PORT_ALL, 1);
         // Request servo position updates
-        err = periph_driver_subscribe(PERIPH_SERVO_X_GET_PULSE);
+        BSP_ERR(periph_driver_subscribe(PERIPH_SERVO_X_GET_PULSE));
     }
-    if (err == ESP_OK) bsp_initialized = true;
-    return err;
+    bsp_initialized = true;
+    return ESP_OK;
 }
 /// @brief Register board events function
 /// @param func event function handler
@@ -133,12 +136,6 @@ esp_err_t bsp_board_reg_event(bsp_evt_func_t func, void *arg) {
 /// @return ESP error
 esp_err_t bsp_board_set_led(uint32_t state) {
     return gpio_set_level(BSP_IO_LED, !!state);
-}
-/// @brief Turn CAN bus transceiver (default - off)
-/// @param state [0] off, [1] on
-/// @return ESP error
-esp_err_t bsp_board_set_can(uint32_t state) {
-    return gpio_set_level(BSP_IO_CAN_EN, !state);
 }
 /// @brief Turn 5V power rail (default - on) (v1.1 only)
 /// @param state [0] off, [1] on
@@ -201,7 +198,7 @@ int bsp_battery_get_voltage() {
 
 /// @brief Spin motor
 /// @param portID [0:3] port number, [-1] all ports
-/// @param power [-100:100]% power and direction, [0] coast
+/// @param power [-100:100]% power and direction, [0] no power
 /// @return ESP error
 esp_err_t bsp_dc_spin(int8_t portID, int32_t power) {
     if (portID < -1 || portID >= DC_CNT) return ESP_ERR_NOT_FOUND;
@@ -294,15 +291,15 @@ esp_err_t bsp_dc_set_decay(int8_t portID, uint32_t decay) {
     // Write all ports
     if (portID == -1) {
         reg = PERIPH_DC_SET_ABCD_DECAY;
+        for (int i=0; i<DC_CNT; i++) { bsp_dc_decay[i] = decay; }
         uint8_t *valuePtr = (uint8_t*)&decay;
         valuePtr[0]=valuePtr[1]=valuePtr[2]=valuePtr[3] = decay;
-        for (int i=0; i<DC_CNT; i++) { bsp_dc_decay[i] = decay; }
     }
     else bsp_dc_decay[portID] = decay;
     return periph_driver_write(reg, decay);
 }
 /// @brief Change PWM frequency for AB ports (default - 20000)
-/// @param frequency [0:250000]Hz PWM frequency
+/// @param frequency [1:250000]Hz PWM frequency
 /// @return ESP error
 esp_err_t bsp_dc_set_frequency_AB(uint32_t frequency) {
     if (frequency < 1 || frequency > 250000) return ESP_ERR_INVALID_ARG;
@@ -311,7 +308,7 @@ esp_err_t bsp_dc_set_frequency_AB(uint32_t frequency) {
     return periph_driver_write(PERIPH_DC_SET_AB_FREQUENCY, frequency);
 }
 /// @brief Change PWM frequency for CD ports (default - 20000)
-/// @param frequency [0:250000]Hz PWM frequency
+/// @param frequency [1:250000]Hz PWM frequency
 /// @return ESP error
 esp_err_t bsp_dc_set_frequency_CD(uint32_t frequency) {
     if (frequency < 1 || frequency > 250000) return ESP_ERR_INVALID_ARG;
@@ -320,7 +317,7 @@ esp_err_t bsp_dc_set_frequency_CD(uint32_t frequency) {
     return periph_driver_write(PERIPH_DC_SET_CD_FREQUENCY, frequency);
 }
 /// @brief Change PWM frequency for ABCD ports (default - 20000)
-/// @param frequency [0:250000]Hz PWM frequency
+/// @param frequency [1:250000]Hz PWM frequency
 /// @return ESP error
 esp_err_t bsp_dc_set_frequency_ABCD(uint32_t frequency) {
     if (frequency < 1 || frequency > 250000) return ESP_ERR_INVALID_ARG;
@@ -360,12 +357,12 @@ int bsp_dc_get_decay(uint8_t portID) {
     return bsp_dc_decay[portID];
 }
 /// @brief Get configured PWM frequency of AB ports
-/// @return [0:250000]Hz PWM frequency
+/// @return [1:250000]Hz PWM frequency
 int bsp_dc_get_frequency_AB() {
     return bsp_dc_frequency[0];
 }
 /// @brief Get configured PWM frequency of CD ports
-/// @return [0:250000]Hz PWM frequency
+/// @return [1:250000]Hz PWM frequency
 int bsp_dc_get_frequency_CD() {
     return bsp_dc_frequency[1];
 }
@@ -478,7 +475,7 @@ esp_err_t bsp_servo_set_speed_ppp(int8_t portID, uint32_t ppp) {
 /// @brief Change PWM period for ABC ports (default - 20000)
 /// @param period [1:65535]us PWM period
 /// @return ESP error
-esp_err_t bsp_servo_set_period(uint32_t period) {
+esp_err_t bsp_servo_set_period_ABC(uint32_t period) {
     if (period < 1 || period > 0xFFFF) return ESP_ERR_INVALID_ARG;
     // Write servo period (us) to all ports
     bsp_servo_period = period;
@@ -494,7 +491,7 @@ esp_err_t bsp_servo_set_period(uint32_t period) {
 }
 /// @brief Get configured PWM period of ABC ports
 /// @return [1:65535]us PWM period
-int bsp_servo_get_period() {
+int bsp_servo_get_period_ABC() {
     return bsp_servo_period;
 }
 /// @brief Read servo motor position
@@ -615,7 +612,7 @@ esp_err_t bsp_cmd_write(bsp_cmd_t cmd, int8_t port, int32_t value) {
     switch (cmd) {
     // Board
     case BSP_LED_STATE: { return bsp_board_set_led(value); }
-    case BSP_CAN_STATE: { return bsp_board_set_can(value); }
+    case BSP_CAN_STATE: { return gpio_set_level(BSP_IO_CAN_EN, !value); }
     case BSP_5V_STATE: { return bsp_board_set_5V(value); }
     // DC
     case BSP_DC_POWER: { return bsp_dc_spin(port, value); }
@@ -638,7 +635,7 @@ esp_err_t bsp_cmd_write(bsp_cmd_t cmd, int8_t port, int32_t value) {
         else return bsp_servo_spin_duration(port, value & 0xFFFF, (value >> 16) & 0x7FFF);
     }
     case BSP_SERVO_CONFIG_SPEED: { return bsp_servo_set_speed_ppp(port, value); }
-    case BSP_SERVO_CONFIG_PERIOD: { return bsp_servo_set_period(value); }
+    case BSP_SERVO_CONFIG_PERIOD: { return bsp_servo_set_period_ABC(value); }
     case BSP_SERVO_CONFIG_ENABLE: { return bsp_servo_set_enable(port, value); }
     // RGB
     case BSP_RGB_COLOR: { return bsp_rgb_color(port, value); }
@@ -671,7 +668,7 @@ int32_t bsp_cmd_read(bsp_cmd_t cmd, uint8_t port) {
     case BSP_SERVO_PULSE: { return bsp_servo_get_pulse(port); }
     case BSP_SERVO_CONFIG_PERIOD: {
         if (port >= SERVO_CNT) return 0;
-        return bsp_servo_get_period();
+        return bsp_servo_get_period_ABC();
     }
     }
     return 0;

@@ -50,14 +50,12 @@ esp_err_t bsp_can_init(bsp_can_receive_handle_t receive_handler, void *args) {
 esp_err_t bsp_can_enable(uint8_t state) {
     esp_err_t err = ESP_FAIL;
     if (state) {
-        bsp_board_set_can(1); // On transceiver
         vTaskResume(xHandle); // Resume RX task
         err = twai_start(); // Start twai driver
     }
     else {
         err = twai_stop(); // Stop twai driver
         vTaskSuspend(xHandle); // Stop RX task
-        bsp_board_set_can(0); // Off transceiver
     }
     return err;
 }
