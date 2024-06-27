@@ -1,6 +1,6 @@
 # Totem Board Support Package
 
-Dependencies and low-level C drivers, required for RoboBoard programming using ESP-IDF framework.
+RoboBoard low-level drivers for ESP-IDF framework.
 
 Check setup guide at: [https://docs.totemmaker.net/setup/](https://docs.totemmaker.net/setup/)
 
@@ -16,6 +16,7 @@ Check setup guide at: [https://docs.totemmaker.net/setup/](https://docs.totemmak
 * ESP-IDF v5.0
 * ESP-IDF v5.1
 * ESP-IDF v5.2
+* ESP-IDF v5.3
 
 ## How to use
 
@@ -43,12 +44,12 @@ void app_main(void)
     // Initialize board
     bsp_board_init();
     // Spin motor A at 100% power
-    bsp_cmd_write(BSP_DC_POWER, BSP_PORT_A, 100);
+    bsp_dc_spin(BSP_PORT_A, 100);
     // Spin servo A to 500us pulse
-    bsp_cmd_write(BSP_SERVO_PULSE, BSP_PORT_A, 500);
+    bsp_servo_spin(BSP_PORT_A, 500);
     // RoboBoard X4 LED on
-    // bsp_cmd_write(BSP_LED_STATE, 0, 1);
-    // bsp_cmd_write(BSP_RGB_COLOR, BSP_PORT_ALL, 0xFF00FF00);
+    // bsp_board_set_led(1);
+    // bsp_rgb_color(BSP_PORT_ALL, 0xFF00FF00);
 }
 ```
 5. Build project:  
@@ -65,7 +66,6 @@ Information for function usage and board features:
 * RoboBoard X4
   * [roboboard_x4.h](https://github.com/totemmaker/totem-bsp/blob/master/roboboard_x4/include/bsp/roboboard_x4.h)
   * [imu.h](https://github.com/totemmaker/totem-bsp/blob/master/roboboard_x4/include/bsp/imu.h)
-  * [can.h](https://github.com/totemmaker/totem-bsp/blob/master/roboboard_x4/include/bsp/can.h)
 
 Example code located in [examples](https://github.com/totemmaker/totem-bsp/tree/master/examples).
 
