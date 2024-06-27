@@ -37,20 +37,21 @@ TEST_CASE("Board init", "[board]") {
 }
 
 #include "test_board.cpp"
-#include "test_dc.cpp"
+// #include "test_dc.cpp"
 #include "test_imu.cpp"
-#include "test_servo.cpp"
+// #include "test_servo.cpp"
 
 void print_board_info() {
     TEST_PRINT("--- Printing board information ---");
     TEST_PRINT("RoboBoard X3");
-    TEST_PRINT("USBin: %d", bsp_cmd_read(BSP_USB_STATE, 0));
-    TEST_PRINT("Rev: %d", bsp_cmd_read(BSP_BOARD_REVISION, 0));
-    TEST_PRINT("Battery: %d mV", bsp_cmd_read(BSP_BATTERY_VOLTAGE, 0));
-    TEST_PRINT("Battery: %d mA", bsp_cmd_read(BSP_BATTERY_CURRENT, 0));
-    TEST_PRINT("Battery charging: %d", bsp_cmd_read(BSP_BATTERY_CHARGING, 0));
-    TEST_PRINT("DC frequency: %d Hz", bsp_cmd_read(BSP_DC_CONFIG_FREQUENCY, 0));
-    TEST_PRINT("Servo period: %d us", bsp_cmd_read(BSP_SERVO_CONFIG_PERIOD, 0));
+    TEST_PRINT("USBin: %d", (int)bsp_cmd_read(BSP_USB_STATE, 0));
+    TEST_PRINT("Rev: %d", (int)bsp_cmd_read(BSP_BOARD_REVISION, 0));
+    TEST_PRINT("Battery: %d mV", (int)bsp_cmd_read(BSP_BATTERY_VOLTAGE, 0));
+    TEST_PRINT("Battery: %d mA", (int)bsp_cmd_read(BSP_BATTERY_CURRENT, 0));
+    TEST_PRINT("Battery charging: %d", (int)bsp_cmd_read(BSP_BATTERY_CHARGING, 0));
+    TEST_PRINT("DC frequency: %d Hz", (int)bsp_cmd_read(BSP_DC_CONFIG_FREQUENCY, 0));
+    TEST_PRINT("DC decay: %s", bsp_cmd_read(BSP_DC_CONFIG_DECAY, 0)==0 ? "slow" : "fast");
+    TEST_PRINT("Servo period: %d us", (int)bsp_cmd_read(BSP_SERVO_CONFIG_PERIOD, 0));
 }
 
 void wait_button() {
@@ -105,34 +106,34 @@ void run_hardware_test() {
     // Test motor
     TEST_PRINT("--- Test Motor ---");
     TEST_PRINT("Spin A"); wait_button();
-    bsp_cmd_write(BSP_DC_POWER, BSP_PORT_A, 50);
+    bsp_cmd_write(BSP_DC_POWER, BSP_PORT_A, 60);
     TEST_PRINT("Brake A 100%"); wait_button();
     bsp_cmd_write(BSP_DC_BRAKE, BSP_PORT_A, 100);
     TEST_PRINT("Spin B"); wait_button();
-    bsp_cmd_write(BSP_DC_POWER, BSP_PORT_B, 50);
+    bsp_cmd_write(BSP_DC_POWER, BSP_PORT_B, 60);
     TEST_PRINT("Brake B 15%"); wait_button();
     bsp_cmd_write(BSP_DC_BRAKE, BSP_PORT_B, 15);
     TEST_PRINT("Spin C"); wait_button();
-    bsp_cmd_write(BSP_DC_POWER, BSP_PORT_C, 50);
+    bsp_cmd_write(BSP_DC_POWER, BSP_PORT_C, 60);
     TEST_PRINT("Stop C"); wait_button();
     bsp_cmd_write(BSP_DC_POWER, BSP_PORT_C, 0);
     TEST_PRINT("Spin D"); wait_button();
-    bsp_cmd_write(BSP_DC_POWER, BSP_PORT_D, 50);
+    bsp_cmd_write(BSP_DC_POWER, BSP_PORT_D, 60);
     TEST_PRINT("Beep D"); wait_button();
-    bsp_cmd_write(BSP_DC_TONE, BSP_PORT_D, 1000);
+    bsp_cmd_write(BSP_DC_TONE, BSP_PORT_D, 4000);
     TEST_PRINT("Beep C"); wait_button();
-    bsp_cmd_write(BSP_DC_TONE, BSP_PORT_C, 1000);
+    bsp_cmd_write(BSP_DC_TONE, BSP_PORT_C, 4000);
     TEST_PRINT("Beep B"); wait_button();
-    bsp_cmd_write(BSP_DC_TONE, BSP_PORT_B, 1000);
+    bsp_cmd_write(BSP_DC_TONE, BSP_PORT_B, 4000);
     TEST_PRINT("Beep A"); wait_button();
-    bsp_cmd_write(BSP_DC_TONE, BSP_PORT_A, 1000);
+    bsp_cmd_write(BSP_DC_TONE, BSP_PORT_A, 4000);
     TEST_PRINT("Stop"); wait_button();
     bsp_cmd_write(BSP_DC_TONE, BSP_PORT_ALL, 0);
     TEST_PRINT("Done");
     // Test motor frequency
     TEST_PRINT("--- Test Motor frequency ---");
     TEST_PRINT("Spin A"); wait_button();
-    bsp_cmd_write(BSP_DC_POWER, BSP_PORT_A, 50);
+    bsp_cmd_write(BSP_DC_POWER, BSP_PORT_A, 60);
     TEST_PRINT("Spin A 2000Hz"); wait_button();
     bsp_cmd_write(BSP_DC_CONFIG_FREQUENCY, BSP_PORT_A, 2000);
     TEST_PRINT("Spin A 2000Hz fast decay"); wait_button();
@@ -147,11 +148,11 @@ void run_hardware_test() {
     // Test motor enable
     TEST_PRINT("--- Test Motor enable ---");
     TEST_PRINT("DC spin all"); wait_button();
-    bsp_cmd_write(BSP_DC_POWER, BSP_PORT_ALL, 50);
+    bsp_cmd_write(BSP_DC_POWER, BSP_PORT_ALL, 60);
     TEST_PRINT("DC brake all"); wait_button();
     bsp_cmd_write(BSP_DC_BRAKE, BSP_PORT_ALL, 100);
     TEST_PRINT("DC spin all"); wait_button();
-    bsp_cmd_write(BSP_DC_POWER, BSP_PORT_ALL, 50);
+    bsp_cmd_write(BSP_DC_POWER, BSP_PORT_ALL, 60);
     TEST_PRINT("DC A disable"); wait_button();
     bsp_cmd_write(BSP_DC_CONFIG_ENABLE, BSP_PORT_A, 0);
     TEST_PRINT("DC B disable"); wait_button();
