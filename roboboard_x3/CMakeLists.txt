@@ -21,5 +21,6 @@ list(APPEND components "led_strip")
 idf_component_register(
     SRCS ${srcs}
     INCLUDE_DIRS "include"
+    PRIV_INCLUDE_DIRS "priv_include"
     REQUIRES ${components}
 )

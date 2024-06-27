@@ -57,7 +57,7 @@ esp_err_t bsp_imu_init(int i2c_num) {
     esp_err_t err = ESP_FAIL;
     i2c.num = i2c_num;
     // Find driver type
-    if (bsp_cmd_read(BSP_BOARD_REVISION, 0) >= 30) {
+    if (bsp_board_get_revision() >= 30) {
         imu_type = IMU_DRIVER_QMI8658;
     }
     // Initialize IMU

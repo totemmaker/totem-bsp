@@ -12,16 +12,16 @@
 #include "esp_mac.h"
 
 #include "driver/gpio.h"
-#include "driver/mcpwm.h"
-#include "soc/mcpwm_periph.h"
 #include "hal/adc_types.h"
 
 #include "bsp/roboboard_x3.h"
+#include "bsp_drivers.h"
 // Macros to return peripheral port command and GPIO pin setup
 #define RegPort(cmd, port) (cmd + ((port+1)*0x10))
 #define GPIO_SEL(pin)   ((uint64_t)(((uint64_t)1)<<(pin)))
 // Amount of peripheral ports available
 #define DC_CNT 4
+#define SERVO_CNT bsp_servo_cnt
 // IDF version dependent ADC setup functions
 void bsp_adc1_init(adc_channel_t channel);
 uint32_t bsp_adc1_get_raw(adc_channel_t channel);
@@ -30,124 +30,30 @@ uint32_t bsp_adc1_raw_to_voltage(uint32_t adc);
 static bool bsp_initialized = false;
 static uint8_t bsp_board_revision = 0;
 static uint8_t bsp_servo_cnt = 2;
-// MCPWM states
-enum {
-    MCPWM_DECAY_UNDEFINED,
-    MCPWM_DECAY_SLOW,
-    MCPWM_DECAY_FAST,
-};
-enum {
-    MCPWM_MODE_UNDEFINED,
-    MCPWM_MODE_POWER,
-    MCPWM_MODE_BRAKE,
-    MCPWM_MODE_TONE,
-};
-static struct MCPWMOutput {
-    const mcpwm_unit_t unit;
-    const mcpwm_timer_t tim;
-    
-    uint32_t frequency;
-    uint32_t decay; 
-    uint32_t mode;
-    int32_t value;
-    uint32_t frequencySet;
+static struct { bsp_evt_func_t func; void *arg; } bsp_evt_handler;
+// Board interrupt handler
+static void bsp_on_isr(void *arg) {
+    if (bsp_evt_handler.func == NULL) return;
+    uint32_t value = 0;
+    switch ((uint32_t)arg) {
+    case BSP_EVT_USB: value = bsp_board_get_usb(); break;
+    case BSP_EVT_BUTTON: value = bsp_board_get_button(); break;
+    case BSP_EVT_CHARGING: value = bsp_battery_get_charging(); break;
+    }
+    bsp_evt_handler.func((uint32_t)arg, 0, value, bsp_evt_handler.arg);
+}
 
-} mcpwm_dc[DC_CNT] = { // Default DC motors configuration
-    {MCPWM_UNIT_0, MCPWM_TIMER_0, 20000, MCPWM_DECAY_SLOW, MCPWM_MODE_POWER, 0, 0},
-    {MCPWM_UNIT_0, MCPWM_TIMER_1, 20000, MCPWM_DECAY_SLOW, MCPWM_MODE_POWER, 0, 0},
-    {MCPWM_UNIT_0, MCPWM_TIMER_2, 20000, MCPWM_DECAY_SLOW, MCPWM_MODE_POWER, 0, 0},
-    {MCPWM_UNIT_1, MCPWM_TIMER_0, 20000, MCPWM_DECAY_SLOW, MCPWM_MODE_POWER, 0, 0},
-};
-static struct MCPWMServo {
-    const mcpwm_timer_t tim;
-    const mcpwm_generator_t gen;
-    uint32_t period;
-} mcpwm_servo[4] = { // Default Servo motors configuration
-    {MCPWM_TIMER_1, MCPWM_GEN_A, 20000},
-    {MCPWM_TIMER_1, MCPWM_GEN_B, 20000},
-    {MCPWM_TIMER_2, MCPWM_GEN_A, 20000},
-    {MCPWM_TIMER_2, MCPWM_GEN_B, 20000},
-};
-// MCPWM initialization
-static void mcpwm_initialize() {
-    // Init MCPWM units with motor pins
-    mcpwm_gpio_init(MCPWM_UNIT_0, MCPWM0A, BSP_IO_MOTORA_INA);
-    mcpwm_gpio_init(MCPWM_UNIT_0, MCPWM0B, BSP_IO_MOTORA_INB);
-    mcpwm_gpio_init(MCPWM_UNIT_0, MCPWM1A, BSP_IO_MOTORB_INA);
-    mcpwm_gpio_init(MCPWM_UNIT_0, MCPWM1B, BSP_IO_MOTORB_INB);
-    mcpwm_gpio_init(MCPWM_UNIT_0, MCPWM2A, BSP_IO_MOTORC_INA);
-    mcpwm_gpio_init(MCPWM_UNIT_0, MCPWM2B, BSP_IO_MOTORC_INB);
-    mcpwm_gpio_init(MCPWM_UNIT_1, MCPWM0A, BSP_IO_MOTORD_INA);
-    mcpwm_gpio_init(MCPWM_UNIT_1, MCPWM0B, BSP_IO_MOTORD_INB);
-    mcpwm_gpio_init(MCPWM_UNIT_1, MCPWM1A, BSP_IO_SERVOA_IN);
-    mcpwm_gpio_init(MCPWM_UNIT_1, MCPWM1B, BSP_IO_SERVOB_IN);
-    mcpwm_gpio_init(MCPWM_UNIT_1, MCPWM2A, BSP_IO_SERVOC_IN);
-    mcpwm_gpio_init(MCPWM_UNIT_1, MCPWM2B, BSP_IO_SERVOD_IN);
-    // Configure MCPWM units
-    mcpwm_config_t pwm_config;
-    pwm_config.frequency = 20000; // 20kHz for DC
-    pwm_config.cmpr_a = 0;
-    pwm_config.cmpr_b = 0;
-    pwm_config.counter_mode = MCPWM_UP_COUNTER;
-    pwm_config.duty_mode = MCPWM_DUTY_MODE_0;
-    mcpwm_init(MCPWM_UNIT_0, MCPWM_TIMER_0, &pwm_config);
-    mcpwm_init(MCPWM_UNIT_0, MCPWM_TIMER_1, &pwm_config);
-    mcpwm_init(MCPWM_UNIT_0, MCPWM_TIMER_2, &pwm_config);
-    mcpwm_init(MCPWM_UNIT_1, MCPWM_TIMER_0, &pwm_config);
-    pwm_config.frequency = 50;   // 50Hz for servo
-    mcpwm_init(MCPWM_UNIT_1, MCPWM_TIMER_1, &pwm_config);
-    mcpwm_init(MCPWM_UNIT_1, MCPWM_TIMER_2, &pwm_config);
-}
-// MCPWM reconfigure
-static esp_err_t mcpwm_configure(struct MCPWMOutput *mcpwm, uint32_t frequency, uint32_t mode, int32_t value) {
-    esp_err_t err = ESP_FAIL;
-    // Update frequency
-    if (mcpwm->frequencySet != frequency) {
-        mcpwm->frequencySet = frequency;
-        // Prevent invalid frequency value
-        if (frequency < 1) frequency = 1;
-        err = mcpwm_set_frequency(mcpwm->unit, mcpwm->tim, frequency);
-    }
-    // Apply control parameters
-    if (mode == MCPWM_MODE_POWER) {
-        int A = 0, B = 0; // Select pin state depending on decay mode
-        if (mcpwm->decay == MCPWM_DECAY_SLOW) {
-            if (value) A = (value < 0) ? 100+value : 100;
-            if (value) B = (value < 0) ? 100 : 100-value;
-        }
-        else if (mcpwm->decay == MCPWM_DECAY_FAST) {
-            A = (value < 0) ? 0 : value;
-            B = (value < 0) ? -value : 0;
-        }
-              mcpwm_set_duty(mcpwm->unit, mcpwm->tim, MCPWM_OPR_A, A);
-        err = mcpwm_set_duty(mcpwm->unit, mcpwm->tim, MCPWM_OPR_B, B);
-    }
-    else if (mode == MCPWM_MODE_BRAKE) {
-              mcpwm_set_duty(mcpwm->unit, mcpwm->tim, MCPWM_OPR_A, value);
-        err = mcpwm_set_duty(mcpwm->unit, mcpwm->tim, MCPWM_OPR_B, value);
-    }
-    else if (mode == MCPWM_MODE_TONE && mcpwm->mode != MCPWM_MODE_TONE) {
-              mcpwm_set_duty(mcpwm->unit, mcpwm->tim, MCPWM_OPR_A, 50);
-              mcpwm_set_duty(mcpwm->unit, mcpwm->tim, MCPWM_OPR_B, 50);
-              mcpwm_set_duty_type(mcpwm->unit, mcpwm->tim, MCPWM_OPR_A, MCPWM_DUTY_MODE_0);
-        err = mcpwm_set_duty_type(mcpwm->unit, mcpwm->tim, MCPWM_OPR_B, MCPWM_DUTY_MODE_1);
-    }
-    else {
-        return ESP_FAIL;
-    }
-    // Reset duty type back to normal after tone was activated
-    if (mode != MCPWM_MODE_TONE && mcpwm->mode == MCPWM_MODE_TONE) {
-              mcpwm_set_duty_type(mcpwm->unit, mcpwm->tim, MCPWM_OPR_A, MCPWM_DUTY_MODE_0);
-        err = mcpwm_set_duty_type(mcpwm->unit, mcpwm->tim, MCPWM_OPR_B, MCPWM_DUTY_MODE_0);
-    }
-    mcpwm->mode = mode;
-    return err;
-}
-// Board initialization function
-esp_err_t bsp_board_init(void) {
+/**************************************************************************************************
+ * Totem RoboBoard X3 low level control API
+ **************************************************************************************************/
+
+/// @brief Initialize BSP driver
+/// @return ESP error
+esp_err_t bsp_board_init() {
     gpio_config_t pGPIOConfig = {0};
     // Initialize 3V3 en pin
     pGPIOConfig.mode = GPIO_MODE_OUTPUT;
+    pGPIOConfig.intr_type = GPIO_INTR_ANYEDGE;
     pGPIOConfig.pin_bit_mask = GPIO_SEL(BSP_IO_3V3_EN);
     gpio_config(&pGPIOConfig);
     // Initialize USB detect pin
@@ -158,8 +64,15 @@ esp_err_t bsp_board_init(void) {
     pGPIOConfig.pull_up_en = GPIO_PULLUP_ENABLE;
     pGPIOConfig.pin_bit_mask = GPIO_SEL(BSP_IO_BUTTON)|GPIO_SEL(BSP_IO_BATTERY_CHARGE);
     gpio_config(&pGPIOConfig);
-    // Initialize motor pins
-    mcpwm_initialize();
+    // Initialize interrupts
+    BSP_ERR(gpio_install_isr_service(0));
+    BSP_ERR(gpio_isr_handler_add(BSP_IO_BUTTON, bsp_on_isr, (void*)BSP_EVT_BUTTON));
+    BSP_ERR(gpio_isr_handler_add(BSP_IO_USB_DETECT, bsp_on_isr, (void*)BSP_EVT_USB));
+    if (bsp_board_revision != 11) { // Revision 1.1 does not support DC power jack detection
+        BSP_ERR(gpio_isr_handler_add(BSP_IO_BATTERY_CHARGE, bsp_on_isr, (void*)BSP_EVT_CHARGING))
+    }
+    // Initialize motors
+    BSP_ERR(bsp_motor_init());
     // Initialize battery analog read
     bsp_adc1_init(ADC_CHANNEL_0); // (BSP_IO_BATTERY_CURRENT) GPIO36 (SENSOR_VP) of ADC1
     bsp_adc1_init(ADC_CHANNEL_1); // (BSP_IO_BATTERY_VOLTAGE) GPIO37 (SENSOR_CAPP) of ADC1
@@ -177,225 +90,266 @@ esp_err_t bsp_board_init(void) {
     bsp_initialized = true;
     return ESP_OK;
 }
-// Handler for "board" command write
-static int bsp_board_cmd_write(bsp_cmd_t cmd, uint32_t value) {
-    // Handle commands
-    switch (cmd) {
-    case BSP_3V_STATE: { gpio_set_level(BSP_IO_3V3_EN, value); break; }
-    default: return ESP_ERR_NOT_SUPPORTED;
-    }
+/// @brief Register board events function
+/// @param func event function handler
+/// @param arg pointer passed to handler
+/// @return ESP error
+esp_err_t bsp_board_reg_event(bsp_evt_func_t func, void *arg) {
+    bsp_evt_handler.func = func;
+    bsp_evt_handler.arg = arg;
     return ESP_OK;
 }
-// Handler for "DC" commands write
-static int bsp_dc_cmd_write(bsp_cmd_t cmd, uint8_t port, int32_t value) {
-    if (port >= DC_CNT) { return ESP_ERR_INVALID_ARG; }
-    // Load mcpwm handler of selected port
-    struct MCPWMOutput *mcpwm = &mcpwm_dc[port];
-    // Handle commands
-    switch (cmd) {
-    case BSP_DC_POWER: {
-        // Limit to [-100:100]
-        if (value < -100 || value > 100) return ESP_ERR_INVALID_SIZE;
-        // Configure port to spin
-        mcpwm->value = value;
-        return mcpwm_configure(mcpwm, mcpwm->frequency, MCPWM_MODE_POWER, mcpwm->value);
+
+/*******************************
+ * Board control functions
+ ******************************/
+
+/// @brief Turn 3.3V power rail (default - off)
+/// @param state [0] off, [1] on
+/// @note  Affects 3v3 pin and Qwiic
+/// @return ESP error
+esp_err_t bsp_board_set_3V(uint32_t state) {
+    return gpio_set_level(BSP_IO_3V3_EN, !!state);
+}
+/// @brief Get board revision
+/// @return Format: [12] -> v1.2
+int bsp_board_get_revision() {
+    return bsp_board_revision;
+}
+/// @brief Is button pressed
+/// @return [0] released, [1] pressed
+int bsp_board_get_button() {
+    return !gpio_get_level(BSP_IO_BUTTON);
+}
+/// @brief Is USB cable plugged in
+/// @return [0] unplugged, [1] plugged in
+int bsp_board_get_usb() {
+    return gpio_get_level(BSP_IO_USB_DETECT);
+}
+
+/*******************************
+ * Battery control functions
+ ******************************/
+
+/// @brief Read battery voltage
+/// @return [2600:4200]mV (millivolts)
+int bsp_battery_get_voltage() {
+    // Read pin voltage
+    uint32_t adcReading = 0;
+    // Oversample
+    for (int i=0; i<16; i++) {
+        adcReading += bsp_adc1_get_raw(ADC_CHANNEL_1);
     }
-    case BSP_DC_BRAKE: {
-        // Limit to [0:100]
-        if (value < 0 || value > 100) return ESP_ERR_INVALID_SIZE;
-        // Configure port to braking
-        mcpwm->value = value;
-        return mcpwm_configure(mcpwm, mcpwm->frequency, MCPWM_MODE_BRAKE, mcpwm->value);
+    adcReading /= 16;
+    // Convert adcReading to pin voltage in mV
+    int32_t pinVoltage = bsp_adc1_raw_to_voltage(adcReading);
+    // Covert pin voltage to battery voltage
+    return pinVoltage * 2;
+}
+/// @brief Read battery current
+/// @return [-2000:2000]mA (milliAmps). [-] discharging
+int bsp_battery_get_current() {
+    // Read pin voltage
+    int32_t adcReading = 0;
+    // Oversample
+    for (int i=0; i<16; i++) {
+        adcReading += bsp_adc1_get_raw(ADC_CHANNEL_0);
     }
-    case BSP_DC_TONE: {
-        value &= 0xFFFF;
-        // Limit to [0:20000]
-        if (value > 20000) return ESP_ERR_INVALID_SIZE;
-        // Configure port to beep tone
-        return mcpwm_configure(mcpwm, value, (value == 0) ? MCPWM_MODE_POWER : MCPWM_MODE_TONE, 0);
-    }
-    case BSP_DC_CONFIG_FREQUENCY: {
-        // Limit to [1:250000]
-        if (value < 1 || value > 250000) return ESP_ERR_INVALID_SIZE;
-        // Configure motor PWM frequency
-        mcpwm->frequency = value;
-        if (mcpwm->mode != MCPWM_MODE_TONE) {
-            return mcpwm_configure(mcpwm, mcpwm->frequency, mcpwm->mode, mcpwm->value);
-        }
-        break;
-    }
-    case BSP_DC_CONFIG_DECAY: {
-        // Limit to [0-slow, 1-fast]
-        if (value != 0 && value != 1) return ESP_ERR_INVALID_SIZE;
-        // Configure motor decay mode
-        mcpwm->decay = (value == 0) ? MCPWM_DECAY_SLOW : MCPWM_DECAY_FAST;
-        if (mcpwm->mode != MCPWM_MODE_TONE) {
-            return mcpwm_configure(mcpwm, mcpwm->frequency, mcpwm->mode, mcpwm->value);
-        }
-        break;
-    }
-    case BSP_DC_CONFIG_ENABLE: {
-        // enable / disable port
-        if (value) return mcpwm_start(mcpwm->unit, mcpwm->tim);
-        return mcpwm_stop(mcpwm->unit, mcpwm->tim);
-    }
-    default: return ESP_ERR_NOT_FOUND;
-    }
+    adcReading /= 16;
+    return (adcReading - 1400) * -2;
+}
+/// @brief Is battery charging
+/// @return [0] not charging, [1] charging
+int bsp_battery_get_charging() {
+    return !gpio_get_level(BSP_IO_BATTERY_CHARGE);
+}
+
+/*******************************
+ * DC control functions
+ ******************************/
+
+/// @brief Spin motor
+/// @param portID [0:3] port number, [-1] all ports
+/// @param power [-100:100]% power and direction, [0] no power
+/// @return ESP error
+esp_err_t bsp_dc_spin(int8_t portID, int32_t power) {
+    return bsp_motor_set(portID, MOTOR_DC_MODE_POWER, power);
+}
+/// @brief Brake motor
+/// @param portID [0:3] port number, [-1] all ports
+/// @param power [0:100]% braking power, [0] coast
+/// @return ESP error
+esp_err_t bsp_dc_brake(int8_t portID, uint32_t power) {
+    if (portID < -1 || portID >= DC_CNT) return ESP_ERR_NOT_FOUND;
+    if (power > 100) return ESP_ERR_INVALID_ARG;
+    return bsp_motor_set(portID, MOTOR_DC_MODE_BRAKE, power);
+}
+/// @brief Output audible tone to motor
+/// @param portID [0:3] port number, [-1] all ports
+/// @param frequency [0:20000]Hz tone frequency
+/// @return ESP error
+esp_err_t bsp_dc_tone(int8_t portID, uint32_t frequency) {
+    return bsp_motor_set(portID, MOTOR_DC_MODE_TONE, frequency);
+}
+/// @brief Toggle port output (default - enabled)
+/// @param portID [0:3] port number, [-1] all ports
+/// @param enable [0] disable output, [1] enable output
+/// @return ESP error
+esp_err_t bsp_dc_set_enable(int8_t portID, uint32_t enable) {
+    return bsp_motor_set(portID, MOTOR_DC_ENABLE, !!enable);
+}
+/// @brief Change decay mode (default - slow)
+/// @param portID [0:3] port number, [-1] all ports
+/// @param decay [0] slow decay, [1] fast decay
+/// @return ESP error
+esp_err_t bsp_dc_set_decay(int8_t portID, uint32_t decay) {
+    return bsp_motor_set(portID, MOTOR_DC_DECAY, decay);
+}
+/// @brief Change PWM frequency for motor port (default - 20000)
+/// @param portID [0:3] port number, [-1] all ports
+/// @param frequency [1:250000]Hz PWM frequency
+/// @return ESP error
+esp_err_t bsp_dc_set_frequency(int8_t portID, uint32_t frequency) {
+    return bsp_motor_set(portID, MOTOR_DC_FREQUENCY, frequency);
+}
+/// @brief Get selected decay mode
+/// @param portID [0:3] port number
+/// @return [0] slow decay, [1] fast decay
+int bsp_dc_get_decay(uint8_t portID) {
+    return bsp_motor_get(portID, MOTOR_DC_DECAY);
+}
+/// @brief Get configured PWM frequency of motor port
+/// @param portID [0:3] port number
+/// @return [1:250000]Hz PWM frequency
+int bsp_dc_get_frequency(uint8_t portID) {
+    return bsp_motor_get(portID, MOTOR_DC_FREQUENCY);
+}
+
+/*******************************
+ * Servo control functions
+ ******************************/
+
+/// @brief Spin servo motor to position
+/// @param portID [0:3] port number, [-1] all ports
+/// @param pulse [0:period]us position
+/// @return ESP error
+esp_err_t bsp_servo_spin(int8_t portID, uint32_t pulse) {
+    return bsp_motor_set(portID, MOTOR_SERVO_PULSE, pulse);
+}
+/// @brief Toggle port output (default - enabled)
+/// @param portID [0:3] port number, [-1] all ports
+/// @param enable [0] disable output, [1] enable output
+/// @return ESP error
+esp_err_t bsp_servo_set_enable(int8_t portID, uint32_t enable) {
+    return bsp_motor_set(portID, MOTOR_SERVO_ENABLE, !!enable);
+}
+/// @brief Change PWM period for AB ports (default - 20000)
+/// @param period [1:65535]us PWM period
+/// @return ESP error
+esp_err_t bsp_servo_set_period_AB(uint32_t period) {
+    return bsp_motor_set(0, MOTOR_SERVO_PERIOD, period);
+}
+/// @brief Change PWM period for CD ports (default - 20000)
+/// @param period [1:65535]us PWM period
+/// @return ESP error
+esp_err_t bsp_servo_set_period_CD(uint32_t period) {
+    return bsp_motor_set(2, MOTOR_SERVO_PERIOD, period);
+}
+/// @brief Change PWM period for ABCD ports (default - 20000)
+/// @param period [1:65535]us PWM period
+/// @return ESP error
+esp_err_t bsp_servo_set_period_ABCD(uint32_t period) {
+    BSP_ERR(bsp_servo_set_period_AB(period));
+    BSP_ERR(bsp_servo_set_period_CD(period));
     return ESP_OK;
 }
-// Handler for "servo" commands write
-static int bsp_servo_cmd_write(bsp_cmd_t cmd, uint8_t port, uint32_t value) {
-    if (port >= bsp_servo_cnt) { return ESP_ERR_INVALID_ARG; }
-    // Handle commands
-    switch (cmd) {
-    case BSP_SERVO_PULSE: {
-        // Limit to [0:period]
-        if (value > mcpwm_servo[port].period) return ESP_ERR_INVALID_SIZE;
-        // Configure spin position
-        return mcpwm_set_duty_in_us(MCPWM_UNIT_1, mcpwm_servo[port].tim, mcpwm_servo[port].gen, value);
-    }
-    case BSP_SERVO_CONFIG_PERIOD: {
-        // Limit to [1:1000000]
-        if (value < 1 || value > 1000000) return ESP_ERR_INVALID_SIZE;
-        // Configure ports A and B PWM period (us)
-        if (port < 2) {
-            mcpwm_servo[0].period = value;
-            mcpwm_servo[1].period = value;
-            return mcpwm_set_frequency(MCPWM_UNIT_1, MCPWM_TIMER_1, 1000000/value);
-        }
-        else {
-            mcpwm_servo[2].period = value;
-            mcpwm_servo[3].period = value;
-            return mcpwm_set_frequency(MCPWM_UNIT_1, MCPWM_TIMER_2, 1000000/value);
-        }
-    }
-    case BSP_SERVO_CONFIG_ENABLE: {
-        // enable / disable port
-        if (value) return mcpwm_start(MCPWM_UNIT_1, mcpwm_servo[port].tim);
-        else return mcpwm_stop(MCPWM_UNIT_1, mcpwm_servo[port].tim);
-    }
-    default: return ESP_ERR_NOT_FOUND;
-    };
-    return ESP_OK;
+/// @brief Get configured PWM period of AB ports
+/// @return [1:65535]us PWM period
+int bsp_servo_get_period_AB() {
+    return bsp_motor_get(0, MOTOR_SERVO_PERIOD);
 }
+/// @brief Get configured PWM period of CD ports
+/// @return [1:65535]us PWM period
+int bsp_servo_get_period_CD() {
+    return bsp_motor_get(2, MOTOR_SERVO_PERIOD);
+}
+/// @brief Read servo motor position
+/// @param portID [0:3] port number
+/// @return [0:period]us position pulse
+int bsp_servo_get_pulse(uint8_t portID) {
+    return bsp_motor_get(portID, MOTOR_SERVO_PULSE);
+}
+/// @brief Get number of servo ports
+/// @return [2,4] servo port count
+int bsp_servo_get_port_cnt() {
+    return bsp_servo_cnt;
+}
+
+/**************************************************************************************************
+ * Legacy command oriented control API. Keeping for backwards compatibility (will be removed)
+ **************************************************************************************************/
+
 // Global command write function
 esp_err_t bsp_cmd_write(bsp_cmd_t cmd, int8_t port, int32_t value) {
     if (!bsp_initialized) { return ESP_ERR_INVALID_STATE; }
-    esp_err_t err = ESP_FAIL;
     // Validate ports. X3 has maximum of 4 ports
-    if (port < -1 || port > 3) { return ESP_ERR_INVALID_ARG; }
+    if (port < -1 || port > 3) { return ESP_ERR_NOT_FOUND; }
     // Validate commands range
-    if (cmd >= BSP_CMD_MAX) {
-        return ESP_ERR_NOT_FOUND;
+    if (cmd >= BSP_CMD_MAX) { return ESP_ERR_INVALID_ARG; }
+    // Handle command
+    switch (cmd) {
+    // Board
+    case BSP_3V_STATE: { return bsp_board_set_3V(value); }
+    // DC
+    case BSP_DC_POWER: { return bsp_dc_spin(port, value); }
+    case BSP_DC_BRAKE: { return bsp_dc_brake(port, value); }
+    case BSP_DC_TONE: { return bsp_dc_tone(port, value); }
+    case BSP_DC_CONFIG_FREQUENCY: { return bsp_dc_set_frequency(port, value); }
+    case BSP_DC_CONFIG_DECAY: { return bsp_dc_set_decay(port, value); }
+    case BSP_DC_CONFIG_ENABLE: { return bsp_dc_set_enable(port, value); }
+    // Servo
+    case BSP_SERVO_PULSE: { return bsp_servo_spin(port, value); }
+    case BSP_SERVO_CONFIG_PERIOD: {
+        if (port == -1) return bsp_servo_set_period_ABCD(value);
+        else if (port < 2) return bsp_servo_set_period_AB(value);
+        else return bsp_servo_set_period_CD(value);
     }
-    else if (cmd >= BSP_SERVO_PULSE) { // Call Servo command handler
-        if (port == -1) { // Apply to all Servo ports
-            for (int i=0; i<bsp_servo_cnt; i++) {
-                err = bsp_servo_cmd_write(cmd, i, value);
-                if (err) return err;
-            }
-        }
-        else { // Apply to single servo port
-            err = bsp_servo_cmd_write(cmd, port, value);
-        }
+    case BSP_SERVO_CONFIG_ENABLE: { return bsp_servo_set_enable(port, value); }
+    default: return ESP_ERR_NOT_SUPPORTED;
     }
-    else if (cmd >= BSP_DC_POWER) { // Call DC command handler
-        if (port == -1) { // Apply to all DC ports
-            for (int i=0; i<DC_CNT; i++) {
-                err = bsp_dc_cmd_write(cmd, i, value);
-                if (err) return err;
-            }
-        }
-        else { // Apply to single DC port
-            err = bsp_dc_cmd_write(cmd, port, value);
-        }
-    }
-    else { // Call board command handler
-        err = bsp_board_cmd_write(cmd, value);
-    }
-    return err;
 }
 // Global command read function
 int32_t bsp_cmd_read(bsp_cmd_t cmd, uint8_t port) {
     if (!bsp_initialized) { return 0; }
     // Handle read supported commands
     switch (cmd) {
-    case BSP_BOARD_REVISION: { return bsp_board_revision; }
-    case BSP_BUTTON_STATE: { return gpio_get_level(BSP_IO_BUTTON) == 0; }
-    case BSP_USB_STATE: { return gpio_get_level(BSP_IO_USB_DETECT) != 0; }
-    case BSP_BATTERY_VOLTAGE: {
-        // Read pin voltage
-        uint32_t adcReading = 0;
-        // Oversample
-        for (int i=0; i<16; i++) {
-            adcReading += bsp_adc1_get_raw(ADC_CHANNEL_1);
-        }
-        adcReading /= 16;
-        // Convert adcReading to pin voltage in mV
-        int32_t pinVoltage = bsp_adc1_raw_to_voltage(adcReading);
-        // Covert pin voltage to battery voltage
-        return pinVoltage * 2;
-    }
-    case BSP_BATTERY_CURRENT: {
-        // Read pin voltage
-        int32_t adcReading = 0;
-        // Oversample
-        for (int i=0; i<16; i++) {
-            adcReading += bsp_adc1_get_raw(ADC_CHANNEL_0);
-        }
-        adcReading /= 16;
-        return (adcReading - 1400) * -2;
-    }
-    case BSP_BATTERY_CHARGING: { return !gpio_get_level(BSP_IO_BATTERY_CHARGE); }
-    case BSP_DC_CONFIG_FREQUENCY: {
-        if (port >= DC_CNT) return 0;
-        return mcpwm_dc[port].frequency;
-    }
-    case BSP_DC_CONFIG_DECAY: {
-        if (port >= DC_CNT) return 0;
-        return mcpwm_dc[port].decay == MCPWM_DECAY_SLOW ? 0 : 1;
-    }
+    // Board
+    case BSP_BOARD_REVISION: { return bsp_board_get_revision(); }
+    case BSP_BUTTON_STATE: { return bsp_board_get_button(); }
+    case BSP_USB_STATE: { return bsp_board_get_usb(); }
+    // Battery
+    case BSP_BATTERY_VOLTAGE: { return bsp_battery_get_voltage(); }
+    case BSP_BATTERY_CURRENT: { return bsp_battery_get_current(); }
+    case BSP_BATTERY_CHARGING: { return bsp_battery_get_charging(); }
+    // DC
+    case BSP_DC_CONFIG_FREQUENCY: { return bsp_dc_get_frequency(port); }
+    case BSP_DC_CONFIG_DECAY: { return bsp_dc_get_decay(port); }
+    // Servo
     case BSP_SERVO_CONFIG_PERIOD: {
-        if (port >= bsp_servo_cnt) return 0;
-        return mcpwm_servo[port].period;
+        if (port < 2) return bsp_servo_get_period_AB();
+        else if (port < 4 && bsp_servo_cnt == 4) return bsp_servo_get_period_CD();
+        else return 0;
     }
     }
-    return ESP_OK;
+    return 0;
 }
 // Global command interrupt register fuction
 esp_err_t bsp_register_interrupt_callback(bsp_cmd_t cmd, bsp_interrupt_func_t func, void *arg) {
     if (!bsp_initialized) { return ESP_ERR_INVALID_STATE; }
-    // Check if ISR service is installed
-    static bool isr_installed = false;
-    if (!isr_installed) {
-        esp_err_t err = gpio_install_isr_service(0);
-        isr_installed = (err == ESP_OK) || (err == ESP_ERR_INVALID_STATE);
-    }
-    if (!isr_installed) return ESP_ERR_INVALID_STATE;
-    // Setup GPIO pin for interrupt
-    gpio_config_t pGPIOConfig = {0};
-    pGPIOConfig.mode = GPIO_MODE_INPUT;
-    pGPIOConfig.intr_type = GPIO_INTR_ANYEDGE;
     switch (cmd) {
-    case BSP_BUTTON_STATE: {
-        pGPIOConfig.pull_up_en = GPIO_PULLUP_ENABLE;
-        pGPIOConfig.pin_bit_mask = GPIO_SEL(BSP_IO_BUTTON);
-        gpio_isr_handler_add(BSP_IO_BUTTON, func, arg);
-        break;
-    }
-    case BSP_USB_STATE: {
-        pGPIOConfig.pin_bit_mask = GPIO_SEL(BSP_IO_USB_DETECT);
-        gpio_isr_handler_add(BSP_IO_USB_DETECT, func, arg);
-        break;
-    }
-    case BSP_BATTERY_CHARGING: {
-        pGPIOConfig.pull_up_en = GPIO_PULLUP_ENABLE;
-        pGPIOConfig.pin_bit_mask = GPIO_SEL(BSP_IO_BATTERY_CHARGE);
-        gpio_isr_handler_add(BSP_IO_BATTERY_CHARGE, func, arg);
-        break;
-    }
+    case BSP_USB_STATE: { return gpio_isr_handler_add(BSP_IO_USB_DETECT, func, arg); }
+    case BSP_BUTTON_STATE: { return gpio_isr_handler_add(BSP_IO_BUTTON, func, arg); }
+    case BSP_BATTERY_CHARGING: { return gpio_isr_handler_add(BSP_IO_BATTERY_CHARGE, func, arg); }
     default: return ESP_ERR_NOT_SUPPORTED;
     }
-    gpio_config(&pGPIOConfig);
-    return ESP_OK;
 }

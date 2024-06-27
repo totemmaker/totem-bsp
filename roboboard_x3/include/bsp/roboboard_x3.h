@@ -38,8 +38,8 @@
 /* Servo motor */
 #define BSP_IO_SERVOA_IN         (GPIO_NUM_25)
 #define BSP_IO_SERVOB_IN         (GPIO_NUM_14) // MTMS
-#define BSP_IO_SERVOC_IN         (GPIO_NUM_16)
-#define BSP_IO_SERVOD_IN         (GPIO_NUM_17)
+#define BSP_IO_SERVOC_IN         (GPIO_NUM_16) // v3.1 only
+#define BSP_IO_SERVOD_IN         (GPIO_NUM_17) // v3.1 only
 
 /* Others */
 #define BSP_IO_BUTTON            (GPIO_NUM_0)
@@ -57,8 +57,159 @@ extern "C" {
 #endif
 
 /**************************************************************************************************
- * Totem RoboBoard X3 board control
+ * Totem RoboBoard X3 low level control API
  **************************************************************************************************/
+// Board events list
+enum {
+    // USB cable plug/unplug event (called from ISR)
+    BSP_EVT_USB,
+    // Button press/release event (called from ISR)
+    BSP_EVT_BUTTON,
+    // Charging start/stop event (called from ISR)
+    BSP_EVT_CHARGING,
+};
+// Board events function
+typedef void (*bsp_evt_func_t)(uint32_t evt, uint32_t portID, uint32_t value, void *arg);
+// Names for A, B, C, D ports
+enum {
+    BSP_PORT_ALL = -1, // All ports
+    BSP_PORT_A = 0, // Port A
+    BSP_PORT_B = 1, // Port B
+    BSP_PORT_C = 2, // Port C
+    BSP_PORT_D = 3, // Port D
+};
+
+/// @brief Initialize BSP driver
+/// @return ESP error
+esp_err_t bsp_board_init();
+/// @brief Register board events function
+/// @param func event function handler
+/// @param arg pointer passed to handler
+/// @return ESP error
+esp_err_t bsp_board_reg_event(bsp_evt_func_t func, void *arg);
+
+/*******************************
+ * Board control functions
+ ******************************/
+
+/// @brief Turn 3.3V power rail (default - off)
+/// @param state [0] off, [1] on
+/// @note  Affects 3v3 pin and Qwiic
+/// @return ESP error
+esp_err_t bsp_board_set_3V(uint32_t state);
+/// @brief Get board revision
+/// @return Format: [12] -> v1.2
+int bsp_board_get_revision();
+/// @brief Is button pressed
+/// @return [0] released, [1] pressed
+int bsp_board_get_button();
+/// @brief Is USB cable plugged in
+/// @return [0] unplugged, [1] plugged in
+int bsp_board_get_usb();
+
+/*******************************
+ * Battery control functions
+ ******************************/
+
+/// @brief Read battery voltage
+/// @return [2600:4200]mV (millivolts)
+int bsp_battery_get_voltage();
+/// @brief Read battery current
+/// @return [-2000:2000]mA (milliAmps). [-] discharging
+int bsp_battery_get_current();
+/// @brief Is battery charging
+/// @return [0] not charging, [1] charging
+int bsp_battery_get_charging();
+
+/*******************************
+ * DC control functions
+ ******************************/
+
+/// @brief Spin motor
+/// @param portID [0:3] port number, [-1] all ports
+/// @param power [-100:100]% power and direction, [0] no power
+/// @return ESP error
+esp_err_t bsp_dc_spin(int8_t portID, int32_t power);
+/// @brief Brake motor
+/// @param portID [0:3] port number, [-1] all ports
+/// @param power [0:100]% braking power, [0] coast
+/// @return ESP error
+esp_err_t bsp_dc_brake(int8_t portID, uint32_t power);
+/// @brief Output audible tone to motor
+/// @param portID [0:3] port number, [-1] all ports
+/// @param frequency [0:20000]Hz tone frequency
+/// @return ESP error
+esp_err_t bsp_dc_tone(int8_t portID, uint32_t frequency);
+/// @brief Toggle port output (default - enabled)
+/// @param portID [0:3] port number, [-1] all ports
+/// @param enable [0] disable output, [1] enable output
+/// @return ESP error
+esp_err_t bsp_dc_set_enable(int8_t portID, uint32_t enable);
+/// @brief Change decay mode (default - slow)
+/// @param portID [0:3] port number, [-1] all ports
+/// @param decay [0] slow decay, [1] fast decay
+/// @return ESP error
+esp_err_t bsp_dc_set_decay(int8_t portID, uint32_t decay);
+/// @brief Change PWM frequency for motor port (default - 20000)
+/// @param portID [0:3] port number, [-1] all ports
+/// @param frequency [1:250000]Hz PWM frequency
+/// @return ESP error
+esp_err_t bsp_dc_set_frequency(int8_t portID, uint32_t frequency);
+/// @brief Get selected decay mode
+/// @param portID [0:3] port number
+/// @return [0] slow decay, [1] fast decay
+int bsp_dc_get_decay(uint8_t portID);
+/// @brief Get configured PWM frequency of motor port
+/// @param portID [0:3] port number
+/// @return [1:250000]Hz PWM frequency
+int bsp_dc_get_frequency(uint8_t portID);
+
+/*******************************
+ * Servo control functions
+ ******************************/
+
+/// @brief Spin servo motor to position
+/// @param portID [0:3] port number, [-1] all ports
+/// @param pulse [0:period]us position
+/// @return ESP error
+esp_err_t bsp_servo_spin(int8_t portID, uint32_t pulse);
+/// @brief Toggle port output (default - enabled)
+/// @param portID [0:3] port number, [-1] all ports
+/// @param enable [0] disable output, [1] enable output
+/// @return ESP error
+esp_err_t bsp_servo_set_enable(int8_t portID, uint32_t enable);
+/// @brief Change PWM period for AB ports (default - 20000)
+/// @param period [1:65535]us PWM period
+/// @return ESP error
+esp_err_t bsp_servo_set_period_AB(uint32_t period);
+/// @brief Change PWM period for CD ports (default - 20000)
+/// @param period [1:65535]us PWM period
+/// @return ESP error
+esp_err_t bsp_servo_set_period_CD(uint32_t period);
+/// @brief Change PWM period for ABCD ports (default - 20000)
+/// @param period [1:65535]us PWM period
+/// @return ESP error
+esp_err_t bsp_servo_set_period_ABCD(uint32_t period);
+/// @brief Get configured PWM period of AB ports
+/// @return [1:65535]us PWM period
+int bsp_servo_get_period_AB();
+/// @brief Get configured PWM period of CD ports
+/// @return [1:65535]us PWM period
+int bsp_servo_get_period_CD();
+/// @brief Read servo motor position
+/// @param portID [0:3] port number
+/// @return [0:period]us position pulse
+int bsp_servo_get_pulse(uint8_t portID);
+/// @brief Get number of servo ports
+/// @return [2,4] servo port count
+int bsp_servo_get_port_cnt();
+
+/**************************************************************************************************
+ * Legacy command oriented control API. Keeping for backwards compatibility (will be removed)
+ **************************************************************************************************/
+/// @brief Callback of bsp_register_interrupt_callback function
+/// @param arg pointer passed to bsp_register_interrupt_callback
+typedef void (*bsp_interrupt_func_t)(void *arg);
 
 typedef uint32_t bsp_cmd_t;
 // List of common RoboBoard X3 commands
@@ -67,7 +218,7 @@ enum {
     // Some commands has ports combined in a group. Writing to either of
     // port will affect both. E.g., write to A of group AB affects A and B.
     // Tags [read],[write] indicates if command should be used with bsp_cmd_read or bsp_cmd_write
-    // Tag [irq] indicated that command can be registered in bsp_register_interrupt_callback
+    // Tag [irq] indicate that command can be registered in bsp_register_interrupt_callback
 
     // [read] board revision [0:990] -> 9.9
     BSP_BOARD_REVISION,
@@ -92,7 +243,7 @@ enum {
     BSP_DC_BRAKE,
     // [write] beep tone [0:20000]Hz
     BSP_DC_TONE,
-    // [write|read] PWM [0:250000]Hz
+    // [write|read] PWM [1:250000]Hz
     BSP_DC_CONFIG_FREQUENCY,
     // [write|read] decay [0-slow, 1-fast]
     BSP_DC_CONFIG_DECAY,
@@ -111,29 +262,6 @@ enum {
     BSP_CMD_MAX
 };
 
-// Names for A, B, C, D ports.
-// Can also use integers (0, 1, 2, 3).
-enum {
-    /// @brief Affect all available ports
-    BSP_PORT_ALL = -1,
-    /// @brief Affect port A
-    BSP_PORT_A = 0,
-    /// @brief Affect port B
-    BSP_PORT_B = 1,
-    /// @brief Affect port C
-    BSP_PORT_C = 2,
-    /// @brief Affect port D
-    BSP_PORT_D = 3,
-};
-
-/// @brief Callback of bsp_register_interrupt_callback function
-/// @param arg pointer passed to bsp_register_interrupt_callback
-typedef void (*bsp_interrupt_func_t)(void *arg);
-
-/// @brief Initialize board
-/// @return ESP error
-esp_err_t bsp_board_init(void);
-
 /// @brief Write value to command
 /// @note Only commands with [write] tag can be used
 /// @param cmd command name from `bsp_cmd_t` list
@@ -146,16 +274,16 @@ esp_err_t bsp_board_init(void);
 ///         ESP_ERR_INVALID_SIZE  - value is out of range
 ///         ESP_ERR_NOT_FOUND     - invalid cmd
 ///         ESP_ERR_NOT_SUPPORTED - action not suported
-esp_err_t bsp_cmd_write(bsp_cmd_t cmd, int8_t port, int32_t value);
+esp_err_t bsp_cmd_write(bsp_cmd_t cmd, int8_t port, int32_t value) __attribute__ ((deprecated));
 
 /// @brief Read command value
 /// @note Only commands with [read] tag can be used
 /// @param cmd command name from `bsp_cmd_t` list
 /// @param port port number (A, B, C, D)
 /// @return value received from command. 0 if error
-int32_t bsp_cmd_read(bsp_cmd_t cmd, uint8_t port);
+int32_t bsp_cmd_read(bsp_cmd_t cmd, uint8_t port) __attribute__ ((deprecated));
 
-/// @brief Register global event receiver. Will be called on each value change
+/// @brief Register global interrupt receiver. Will be called on each value change
 /// @note Only commands with [irq] tag can be registered
 /// @param cmd command name from `bsp_cmd_t` list
 /// @param func interrupt function callback
@@ -164,7 +292,7 @@ int32_t bsp_cmd_read(bsp_cmd_t cmd, uint8_t port);
 ///         ESP_OK                - success
 ///         ESP_ERR_INVALID_STATE - ISR init fail or BSP not initialized
 ///         ESP_ERR_NOT_SUPPORTED - cmd not supported
-esp_err_t bsp_register_interrupt_callback(bsp_cmd_t cmd, bsp_interrupt_func_t func, void *arg);
+esp_err_t bsp_register_interrupt_callback(bsp_cmd_t cmd, bsp_interrupt_func_t func, void *arg) __attribute__ ((deprecated));
 
 #ifdef __cplusplus
 }
